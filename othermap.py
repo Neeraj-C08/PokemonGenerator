@@ -42,7 +42,7 @@ def run_pygame_visualizer():
 
 
     try:
-        grass_image_path = "grass.png"
+        grass_image_path = "images/grass.png"
         grass_original_image = pygame.image.load(grass_image_path).convert_alpha()
         grass_scaled_surface = pygame.transform.scale(grass_original_image, (square_width, square_height))
 
@@ -71,8 +71,8 @@ def run_pygame_visualizer():
                 if coordinate_grid[row_idx, col_idx] == 1:
                     screen.blit(grass_scaled_surface, (left, top))
                 else:
-                    rect = pygame.Rect(left, top, square_width, square_height)
-                    pygame.draw.rect(screen, BLACK, rect)
+                    rectangle = pygame.Rect(left, top, square_width, square_height)
+                    pygame.draw.rect(screen, BLACK, rectangle)
 
         pygame.display.flip()
 
