@@ -1,37 +1,52 @@
 import numpy as np
 import pygame
 
+BIOMES = ["grassland", "desert", "snow"]
+
 
 # Re-defining the array generation function for self-containment
-def main_game_array(rows, cols, probability_of_one=0.5):
+def main_game_array(rows, cols, probability_of_one=0.5, seed=None):
     if not (0 <= probability_of_one <= 1):
         print("change probability of generating 1's ")
         return None
+
+    if seed is not None:
+        np.random.seed(seed) 
 
     random_array = np.random.rand(rows, cols)
     binary_array = (random_array <= probability_of_one).astype(int)
     return binary_array
 
+def generate_biome_map(rows, cols, seed):
+    np.random.seed(seed)
+    biome_grid = np.empty((rows, cols), dtype=object)
+
+    REGION_SIZE = 4  # every 4x4 block is one biome
+    biome_choices = ["grassland", "desert", "snow"]
+
+    for row in range(0, rows, REGION_SIZE):
+        for col in range(0, cols, REGION_SIZE):
+            biome = np.random.choice(biome_choices)
+
+            for r in range(row, min(row + REGION_SIZE, rows)):
+                for c in range(col, min(col + REGION_SIZE, cols)):
+                    biome_grid[r, c] = biome
+
+    return biome_grid
+
+
+
 
 def run_pygame_visualizer():
     ARRAY_ROWS = 16
     ARRAY_COLS = 16
-    PROBABILITY_OF_ONE = 0.9
+    PROBABILITY_OF_ONE = 0.85
+    SEED = 3465
 
-    # Window dimensions
     SCREEN_WIDTH = 600
     SCREEN_HEIGHT = 600
-    CAPTION = "Pokemon Map"
-
-    # Colors
+    CAPTION = f"Biomes Map (Seed: {SEED})"
     BLACK = (0, 0, 0)
-
-    # --- Generate the 2D array ---
-    coordinate_grid = main_game_array(ARRAY_ROWS, ARRAY_COLS, PROBABILITY_OF_ONE)
-
-    if coordinate_grid is None:
-        print("Couldn't generate grid")
-        return
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -40,28 +55,28 @@ def run_pygame_visualizer():
     square_width = SCREEN_WIDTH // ARRAY_COLS
     square_height = SCREEN_HEIGHT // ARRAY_ROWS
 
+    # --- Load placeholder biome images ---
 
-    try:
-        grass_image_path = "images/grass.png"
-        grass_original_image = pygame.image.load(grass_image_path).convert_alpha()
-        grass_scaled_surface = pygame.transform.scale(grass_original_image, (square_width, square_height))
+    def load_placeholder(name):
+        surf = pygame.Surface((square_width, square_height))
+        if name == "grassland":
+          pygame.image.load("images/grass.png").convert_alpha()  # green
+        elif name == "desert":
+            pygame.image.load("images/32x32_sand_desert_dune.png").convert_alpha() # sand
+        elif name == "snow":
+            surf.fill((245, 245, 245))  # white
+        return surf
+ 
 
-    except pygame.error as e:
-        print(f"Couldn't load image: {e}.")
-        GRASS_COLOR = (34, 139, 34)
-        grass_scaled_surface = pygame.Surface((square_width, square_height))
-        grass_scaled_surface.fill(GRASS_COLOR)
+    biome_textures = {
+        "grassland": pygame.image.load("images/grass.png").convert_alpha() ,
+        "desert": pygame.image.load("images/32x32_sand_desert_dune.png").convert_alpha(),
+        "snow": pygame.image.load("images/snow.png").convert_alpha(),
+    }
 
-    try:
-        building_image_path = "images/pokemon_building.png"
-        building_original_image = pygame.image.load(building_image_path).convert_alpha()
-        building_scaled_surface = pygame.transform.scale(building_original_image, (square_width, square_height))
-
-    except pygame.error as e:
-        print(f"Couldn't load image: {e}.")
-        GRASS_COLOR = (34, 139, 34)
-        building_scaled_surface = pygame.Surface((square_width, square_height))
-        building_scaled_surface.fill(BLACK)
+    # Generate grid + biome map
+    coordinate_grid = main_game_array(ARRAY_ROWS, ARRAY_COLS, PROBABILITY_OF_ONE, seed=SEED)
+    biome_map = generate_biome_map(ARRAY_ROWS, ARRAY_COLS, seed=SEED)
 
     # --- Game Loop ---
     running = True
@@ -70,25 +85,29 @@ def run_pygame_visualizer():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Clear the screen
         screen.fill(BLACK)
 
-        # Draw the grid
         for row_idx in range(ARRAY_ROWS):
             for col_idx in range(ARRAY_COLS):
-                left = col_idx * square_width
-                top = row_idx * square_height
+                x = col_idx * square_width
+                y = row_idx * square_height
+                biome = biome_map[row_idx][col_idx]
 
-                if coordinate_grid[row_idx, col_idx] == 1:
-                    screen.blit(grass_scaled_surface, (left, top))
+                if coordinate_grid[row_idx][col_idx] == 1:
+                    screen.blit(biome_textures[biome], (x, y))
                 else:
-                    rectangle = pygame.Rect(left, top, square_width, square_height)
-                    screen.blit(building_scaled_surface, (left, top))
+                    building_image = pygame.image.load("images/pokemon_building.png").convert_alpha()
+                    building_scaled = pygame.transform.scale(building_image, (square_width, square_height))
+
+                    screen.blit(building_scaled, (x, y))
+
+                    
 
         pygame.display.flip()
 
     pygame.quit()
     print("Pygame visualizer closed.")
+
 
 
 if __name__ == "__main__":
