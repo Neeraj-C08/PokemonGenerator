@@ -78,6 +78,26 @@ def run_pygame_visualizer():
     coordinate_grid = main_game_array(ARRAY_ROWS, ARRAY_COLS, PROBABILITY_OF_ONE, seed=SEED)
     biome_map = generate_biome_map(ARRAY_ROWS, ARRAY_COLS, seed=SEED)
 
+    class Player(pygame.sprite.Sprite):
+        def __init__(self, image_path, position, size):
+            super().__init__()
+            self.image = pygame.image.load("images/PokeEnd4-removebg-preview.png").convert_alpha()
+            self.image = pygame.transform.scale(self.image, size)
+            self.rect = self.image.get_rect(topleft=position)
+
+
+        def update(self):
+            # Update player position or state if needed
+            pass
+    players = pygame.sprite.Group()
+
+
+    player = Player("images/PokeEnd4-removebg-preview.png", (10, 10), (32, 32))
+    players.add(player)
+
+
+
+
     # --- Game Loop ---
     running = True
     while running:
@@ -104,6 +124,11 @@ def run_pygame_visualizer():
                     
 
         pygame.display.flip()
+
+        players.update()
+        players.draw(screen)
+        pygame.display.flip()
+
 
     pygame.quit()
     print("Pygame visualizer closed.")
