@@ -12,6 +12,20 @@ def main_game_array(rows, cols, probability_of_one=0.5):
     binary_array = (random_array <= probability_of_one).astype(int)
     return binary_array
 
+class Playee(pygame.sprite.Sprite):
+    def __init__(self, image_path, position, size):
+        super().__init__()
+        self.image = pygame.image.load(image_path).convert_alpha()
+        self.image = pygame.transform.scale(self.image, size)
+        self.rect = self.image.get_rect(topleft=position)
+
+    def update(self):
+        # Update player position or state if needed
+        pass
+players = pygame.sprite.Group()
+
+player = Player1("images/player.png", (100, 100), (32, 32))
+players.add(player)
 
 def run_pygame_visualizer():
     ARRAY_ROWS = 16
@@ -26,7 +40,7 @@ def run_pygame_visualizer():
     # Colors
     BLACK = (0, 0, 0)
 
-    # --- Generate the 2D array ---
+    #Creating the 2D array    
     coordinate_grid = main_game_array(ARRAY_ROWS, ARRAY_COLS, PROBABILITY_OF_ONE)
 
     if coordinate_grid is None:
@@ -85,6 +99,10 @@ def run_pygame_visualizer():
                     rectangle = pygame.Rect(left, top, square_width, square_height)
                     screen.blit(building_scaled_surface, (left, top))
 
+        # Draw the player
+        players.update()
+        players.draw(screen)
+        # Update the display
         pygame.display.flip()
 
     pygame.quit()
