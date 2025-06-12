@@ -1,5 +1,7 @@
 import numpy as np
 import pygame
+import json
+
 
 BIOMES = ["grassland", "desert", "snow"]
 
@@ -15,6 +17,23 @@ def main_game_array(rows, cols, probability_of_one=0.5, seed=None):
     random_array = np.random.rand(rows, cols)
     binary_array = (random_array <= probability_of_one).astype(int)
     return binary_array
+
+def save_player_coords(grid_x, grid_y, filename="player_coords.json"):
+    data = {
+        "x": grid_x,
+        "y": grid_y
+    }
+    with open(filename, "w") as f:
+        json.dump(data, f)
+
+def load_player_coords(filename="player_coords.json"):
+    try:
+        with open(filename, "r") as f:
+            data = json.load(f)
+            return data["x"], data["y"]
+    except (FileNotFoundError, KeyError):
+        return 0, 0  # default starting position
+
 
 def generate_biome_map(rows, cols, seed):
     np.random.seed(seed)
@@ -32,6 +51,13 @@ def generate_biome_map(rows, cols, seed):
                     biome_grid[r, c] = biome
 
     return biome_grid
+
+def is_at_building_entrance(player_x, player_y, building_coords):
+    for r, c in building_coords:
+        if player_y == r + 1 and player_x == c:
+            return True
+    return False
+
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, image_path, start_grid_x, start_grid_y, square_width, square_height, total_rows, total_cols):
@@ -95,8 +121,16 @@ def run_pygame_visualizer():
 
     SCREEN_WIDTH = 600
     SCREEN_HEIGHT = 600
-    CAPTION = f"Biomes Map (Seed: {SEED})"
+    CAPTION = f"Pokemon Map (Seed: {SEED})"
     BLACK = (0, 0, 0)
+
+    coordinate_grid = main_game_array(ARRAY_ROWS, ARRAY_COLS, PROBABILITY_OF_ONE, seed=SEED)
+    if coordinate_grid is None:
+        print("Failed to generate coordinate grid.")
+        return
+
+    # Store all building positions
+    building_coords = [(r, c) for r in range(ARRAY_ROWS) for c in range(ARRAY_COLS) if coordinate_grid[r, c] == 0]
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -222,6 +256,8 @@ def run_pygame_visualizer():
         players.update()
         players.draw(screen)
         pygame.display.flip()
+        print(player.grid_x, player.grid_y)
+        
 
     pygame.quit()
     print("Pygame visualizer closed.")
