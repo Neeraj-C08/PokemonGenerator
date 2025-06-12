@@ -48,27 +48,46 @@ class Player(pygame.sprite.Sprite):
         self.total_cols = total_cols
         self.square_width = square_width
         self.square_height = square_height
+        self.is_moving = False
+        self.move_cooldown = 1  # frames between moves
+        self.move_timer = 0
 
-    def move(self, dx, dy, coordinate_grid):
-        new_grid_x = self.grid_x + dx
-        new_grid_y = self.grid_y + dy
+    def try_move(self, dx, dy, coordinate_grid):
+            if self.move_timer > 0:
+                self.move_timer -= 1
+                return
 
-        if not (0 <= new_grid_x < self.total_cols and 0 <= new_grid_y < self.total_rows):
-            return 
+            new_grid_x = self.grid_x + dx
+            new_grid_y = self.grid_y + dy
 
-        if coordinate_grid[new_grid_y, new_grid_x] == 0:
-            return
+            if not (0 <= new_grid_x < self.total_cols and 0 <= new_grid_y < self.total_rows):
+                return
 
-        self.grid_x = new_grid_x
-        self.grid_y = new_grid_y
+            if coordinate_grid[new_grid_y, new_grid_x] == 0:
+                return
 
-        self.rect.topleft = (self.grid_x * self.square_width, self.grid_y * self.square_height)
+            self.grid_x = new_grid_x
+            self.grid_y = new_grid_y
+            self.rect.topleft = (self.grid_x * self.square_width, self.grid_y * self.square_height)
+            self.is_moving = True
+            self.move_timer = self.move_cooldown  # reset cooldown
+    # ADDITION: Load multiple images for animation
+    def load_animation_images(image_paths, width, height):
+        return [pygame.transform.scale(pygame.image.load(path).convert_alpha(), (width, height)) for path in image_paths]
+
 
     def update(self):
-        pass
-
+        if self.is_moving:
+            self.animation_timer += 1
+            if self.animation_timer >= self.animation_speed:
+                self.animation_timer = 0
+                self.current_frame = (self.current_frame + 1) % len(self.animations[self.direction])
+            self.image = self.animations[self.direction][self.current_frame]
+        else:
+            self.image = self.animations[self.direction][0]
 
 def run_pygame_visualizer():
+    clock = pygame.time.Clock()
     ARRAY_ROWS = 16
     ARRAY_COLS = 16
     PROBABILITY_OF_ONE = 0.85
@@ -133,25 +152,56 @@ def run_pygame_visualizer():
             break
 
 
-    player = Player("images/PokeEnd4-removebg-preview.png", start_x, start_y,
+    player = Player("images/down1.png", start_x, start_y,
                     square_width, square_height, ARRAY_ROWS, ARRAY_COLS)
     players.add(player)
+    # Setup directional animations
+    image_sets = {
+        "up": ["images/up1.png", "images/up2.png", "images/up3.png", "images/up4.png"],
+        "down": ["images/down1.png", "images/down2.png", "images/down3.png", "images/down4.png"],
+        "left": ["images/left1.png", "images/left2.png", "images/left3.png", "images/left4.png"],
+        "right": ["images/right1.png", "images/right2.png", "images/right3.png", "images/right4.png"]
+    }
+
 
     # --- Game Loop ---
+    
+    def load_directional_animations(base_names, width, height):
+        animations = {}
+        for direction, image_files in base_names.items():
+            animations[direction] = [pygame.transform.scale(
+                pygame.image.load(img).convert_alpha(), (width, height)) for img in image_files]
+        return animations
+
+    player.animations = load_directional_animations(image_sets, player.square_width, player.square_height)
+    player.direction = "down"  # starting direction
+    player.current_frame = 0
+    player.animation_timer = 0
+    player.animation_speed = 100
+    player.image = player.animations[player.direction][0]  # Set initial image
+
+    # in the game loop
+    clock.tick(60)  # 60 FPS
+
     running = True
     while running:
+        keys = pygame.key.get_pressed()
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_UP:
-                    player.move(0, -1, coordinate_grid)
-                elif event.key == pygame.K_DOWN:
-                    player.move(0, 1, coordinate_grid) 
-                elif event.key == pygame.K_LEFT:
-                    player.move(-1, 0, coordinate_grid) 
-                elif event.key == pygame.K_RIGHT:
-                    player.move(1, 0, coordinate_grid) 
+           
+            player.is_moving = False  # Reset every frame
+
+            if keys[pygame.K_UP]:
+                player.direction = "up"
+                player.try_move(0, -1, coordinate_grid)
+            elif keys[pygame.K_DOWN]:
+                player.direction = "down"
+                player.try_move(0, 1, coordinate_grid)
+            elif keys[pygame.K_LEFT]:
+                player.direction = "left"
+                player.try_move(-1, 0, coordinate_grid)
+            elif keys[pygame.K_RIGHT]:
+                player.direction = "right"
+                player.try_move(1, 0, coordinate_grid)
 
 
         # Clear the screen
