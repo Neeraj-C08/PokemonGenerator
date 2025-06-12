@@ -33,6 +33,13 @@ def generate_biome_map(rows, cols, seed):
 
     return biome_grid
 
+def is_at_building_entrance(player_x, player_y, building_coords):
+    for r, c in building_coords:
+        if player_y == r + 1 and player_x == c:
+            return True
+    return False
+
+
 class Player(pygame.sprite.Sprite):
     def __init__(self, image_path, start_grid_x, start_grid_y, square_width, square_height, total_rows, total_cols):
         super().__init__()
@@ -76,8 +83,16 @@ def run_pygame_visualizer():
 
     SCREEN_WIDTH = 600
     SCREEN_HEIGHT = 600
-    CAPTION = f"Biomes Map (Seed: {SEED})"
+    CAPTION = f"Pokemon Map (Seed: {SEED})"
     BLACK = (0, 0, 0)
+
+    coordinate_grid = main_game_array(ARRAY_ROWS, ARRAY_COLS, PROBABILITY_OF_ONE, seed=SEED)
+    if coordinate_grid is None:
+        print("Failed to generate coordinate grid.")
+        return
+
+    # Store all building positions
+    building_coords = [(r, c) for r in range(ARRAY_ROWS) for c in range(ARRAY_COLS) if coordinate_grid[r, c] == 0]
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -145,13 +160,18 @@ def run_pygame_visualizer():
                 running = False
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
-                    player.move(0, -1, coordinate_grid)
+                    above_y = player.grid_y - 1
+                    if (above_y, player.grid_x) in building_coords:
+                        print(f"Entered building at ({player.grid_x}, {above_y})")
+                        # Handle building entrance logic here
+                    else:
+                        player.move(0, -1, coordinate_grid)
                 elif event.key == pygame.K_DOWN:
-                    player.move(0, 1, coordinate_grid) 
+                    player.move(0, 1, coordinate_grid)
                 elif event.key == pygame.K_LEFT:
-                    player.move(-1, 0, coordinate_grid) 
+                    player.move(-1, 0, coordinate_grid)
                 elif event.key == pygame.K_RIGHT:
-                    player.move(1, 0, coordinate_grid) 
+                    player.move(1, 0, coordinate_grid)
 
 
         # Clear the screen
@@ -172,6 +192,8 @@ def run_pygame_visualizer():
         players.update()
         players.draw(screen)
         pygame.display.flip()
+        print(player.grid_x, player.grid_y)
+        
 
     pygame.quit()
     print("Pygame visualizer closed.")
