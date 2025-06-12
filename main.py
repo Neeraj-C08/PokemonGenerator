@@ -1,5 +1,7 @@
 import numpy as np
 import pygame
+import json
+
 
 BIOMES = ["grassland", "desert", "snow"]
 
@@ -15,6 +17,23 @@ def main_game_array(rows, cols, probability_of_one=0.5, seed=None):
     random_array = np.random.rand(rows, cols)
     binary_array = (random_array <= probability_of_one).astype(int)
     return binary_array
+
+def save_player_coords(grid_x, grid_y, filename="player_coords.json"):
+    data = {
+        "x": grid_x,
+        "y": grid_y
+    }
+    with open(filename, "w") as f:
+        json.dump(data, f)
+
+def load_player_coords(filename="player_coords.json"):
+    try:
+        with open(filename, "r") as f:
+            data = json.load(f)
+            return data["x"], data["y"]
+    except (FileNotFoundError, KeyError):
+        return 0, 0  # default starting position
+
 
 def generate_biome_map(rows, cols, seed):
     np.random.seed(seed)
@@ -163,6 +182,7 @@ def run_pygame_visualizer():
                     above_y = player.grid_y - 1
                     if (above_y, player.grid_x) in building_coords:
                         print(f"Entered building at ({player.grid_x}, {above_y})")
+                        save_player_coords(player.grid_x, player.grid_y)
                         # Handle building entrance logic here
                     else:
                         player.move(0, -1, coordinate_grid)
