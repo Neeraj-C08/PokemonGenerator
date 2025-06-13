@@ -222,10 +222,12 @@ def run_pygame_visualizer():
 
     running = True
     while running:
-        keys = pygame.key.get_pressed()
         for event in pygame.event.get():
+            keys = pygame.key.get_pressed()
             player.is_moving = False
-
+            if event.type == pygame.QUIT:
+                running = False
+                
             if keys[pygame.K_UP]:
                 player.direction = "up"
                 above_y = player.grid_y - 1
