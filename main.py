@@ -166,10 +166,15 @@ def run_pygame_visualizer():
     try:
         building_image = pygame.image.load("images/pokemon_building.png").convert_alpha()
         building_scaled = pygame.transform.scale(building_image, (square_width, square_height))
+        tree_image = pygame.image.load("images/tree.png").convert_alpha()
+        tree_scaled = pygame.transform.scale(tree_image, (square_width, square_height))
     except pygame.error as e:
         print(f"Couldn't load building image: {e}. Using fallback.")
         building_scaled = pygame.Surface((square_width, square_height))
         building_scaled.fill((100, 100, 100)) 
+        tree_scaled = pygame.Surface((square_width, square_height))
+        tree_scaled.fill((0, 255, 0))  # Fallback color for trees
+
 
 
     # Generate grid + biome map
