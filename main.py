@@ -32,7 +32,7 @@ def load_player_coords(filename="player_coords.json"):
             data = json.load(f)
             return data["x"], data["y"]
     except (FileNotFoundError, KeyError):
-        return 0, 0  # default starting position
+        return 0, 0  
 
 
 def generate_biome_map(rows, cols, seed):
@@ -78,19 +78,24 @@ class Player(pygame.sprite.Sprite):
         self.move_cooldown = 1  # frames between moves
         self.move_timer = 0
 
+
     def try_move(self, dx, dy, coordinate_grid):
             if self.move_timer > 0:
                 self.move_timer -= 1
                 return
 
+
             new_grid_x = self.grid_x + dx
             new_grid_y = self.grid_y + dy
+
 
             if not (0 <= new_grid_x < self.total_cols and 0 <= new_grid_y < self.total_rows):
                 return
 
+
             if coordinate_grid[new_grid_y, new_grid_x] == 0:
                 return
+
 
             self.grid_x = new_grid_x
             self.grid_y = new_grid_y
@@ -101,7 +106,6 @@ class Player(pygame.sprite.Sprite):
     def load_animation_images(image_paths, width, height):
         return [pygame.transform.scale(pygame.image.load(path).convert_alpha(), (width, height)) for path in image_paths]
 
-
     def update(self):
         if self.is_moving:
             self.animation_timer += 1
@@ -111,6 +115,7 @@ class Player(pygame.sprite.Sprite):
             self.image = self.animations[self.direction][self.current_frame]
         else:
             self.image = self.animations[self.direction][0]
+
 
 def run_pygame_visualizer():
     clock = pygame.time.Clock()
@@ -185,11 +190,9 @@ def run_pygame_visualizer():
         if found_start:
             break
 
-
-    player = Player("images/down1.png", start_x, start_y,
-                    square_width, square_height, ARRAY_ROWS, ARRAY_COLS)
+    player = Player("images/down1.png", start_x, start_y,square_width, square_height, ARRAY_ROWS, ARRAY_COLS) 
     players.add(player)
-    # Setup directional animations
+        # Setup directional animations
     image_sets = {
         "up": ["images/up1.png", "images/up2.png", "images/up3.png", "images/up4.png"],
         "down": ["images/down1.png", "images/down2.png", "images/down3.png", "images/down4.png"],
@@ -199,20 +202,20 @@ def run_pygame_visualizer():
 
 
     # --- Game Loop ---
-    
     def load_directional_animations(base_names, width, height):
         animations = {}
         for direction, image_files in base_names.items():
             animations[direction] = [pygame.transform.scale(
                 pygame.image.load(img).convert_alpha(), (width, height)) for img in image_files]
         return animations
-
+    
     player.animations = load_directional_animations(image_sets, player.square_width, player.square_height)
     player.direction = "down"  # starting direction
     player.current_frame = 0
     player.animation_timer = 0
     player.animation_speed = 100
     player.image = player.animations[player.direction][0]  # Set initial image
+
 
     # in the game loop
     clock.tick(60)  # 60 FPS
@@ -221,12 +224,17 @@ def run_pygame_visualizer():
     while running:
         keys = pygame.key.get_pressed()
         for event in pygame.event.get():
-           
-            player.is_moving = False  # Reset every frame
+            player.is_moving = False
 
             if keys[pygame.K_UP]:
                 player.direction = "up"
-                player.try_move(0, -1, coordinate_grid)
+                above_y = player.grid_y - 1
+                if (above_y, player.grid_x) in building_coords:
+                    print(f"Entered building at ({player.grid_x}, {above_y})")
+                    save_player_coords(player.grid_x, player.grid_y) 
+                    # Handle building entrance logic here
+                else:
+                    player.try_move(0, -1, coordinate_grid)
             elif keys[pygame.K_DOWN]:
                 player.direction = "down"
                 player.try_move(0, 1, coordinate_grid)
