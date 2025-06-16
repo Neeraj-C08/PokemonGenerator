@@ -184,6 +184,7 @@ def run_pygame_visualizer():
     players = pygame.sprite.Group()
 
 
+
     start_x, start_y = 0, 0
     found_start = False
     for r in range(ARRAY_ROWS):
@@ -221,6 +222,9 @@ def run_pygame_visualizer():
     player.animation_speed = 100
     player.image = player.animations[player.direction][0]  # Set initial image
 
+
+#abhi finish the implementation of the game loop for the Pygame visualizer in this area below, 
+    # Set the clock for controlling frame rate
 
     # in the game loop
     clock.tick(60)  # 60 FPS
