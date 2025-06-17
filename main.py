@@ -372,7 +372,7 @@ def run_pygame_visualizer():
     clock = pygame.time.Clock()
     ARRAY_ROWS = 64
     ARRAY_COLS = 64
-    SEED = 3465 # Seed for reproducible map generation
+    SEED = 6969 # Seed for reproducible map generation
 
     TILE_SIZE = 32 # Size of one tile in pixels
     
@@ -382,6 +382,7 @@ def run_pygame_visualizer():
 
     CAPTION = f"Pokemon Map (Seed: {SEED})"
     BLACK = (0, 0, 0) # Background color
+    GREEN = {114,199,160}
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -517,7 +518,8 @@ def run_pygame_visualizer():
         camera.update(player.rect) 
 
         # Clear the screen
-        screen.fill(BLACK)
+        
+        screen.fill((114,199,160))
 
         # --- Draw all tiles (optimized with camera culling) ---
         # Calculate which range of tiles are currently visible on screen
