@@ -1,23 +1,353 @@
 import numpy as np
 import pygame
 import json
+import random
+import os
 
+# --- SpriteSheet Class (Not currently used for player or map, but kept if needed for future animated sprites) ---
+class SpriteSheet(object):
+    def __init__(self, filename):
+        try:
+            self.sheet = pygame.image.load(filename).convert_alpha()
+        except pygame.error as e:
+            print(f"Unable to load spritesheet image: {filename}: {e}")
+            raise SystemExit(e)
 
-BIOMES = ["grassland", "desert", "snow"]
+    def get_image(self, x, y, width, height):
+        image = pygame.Surface([width, height], pygame.SRCALPHA).convert_alpha()
+        image.blit(self.sheet, (0, 0), (x, y, width, height))
+        return image 
 
-# Re-defining the array generation function for self-containment
-def main_game_array(rows, cols, probability_of_one=0.5, seed=None):
-    if not (0 <= probability_of_one <= 1):
-        print("change probability of generating 1's ")
-        return None
+    def load_strip(self, rect, image_count):
+        x, y, sprite_width, sprite_height = rect
+        images = []
+        for i in range(image_count):
+            images.append(self.get_image(x + i * sprite_width, y, sprite_width, sprite_height))
+        return images
 
+# --- Camera Class ---
+class Camera:
+    def __init__(self, screen_width_pixels, screen_height_pixels, map_width_tiles, map_height_tiles, tile_size):
+        self.camera_x = 0
+        self.camera_y = 0
+        self.screen_width_pixels = screen_width_pixels
+        self.screen_height_pixels = screen_height_pixels
+        self.map_width_pixels = map_width_tiles * tile_size
+        self.map_height_pixels = map_height_tiles * tile_size
+        self.tile_size = tile_size
+
+    def update(self, target_rect):
+        """
+        Updates the camera's position to center on the target rectangle.
+        Clamps the camera position to stay within the map boundaries.
+        """
+        target_center_x = target_rect.centerx
+        target_center_y = target_rect.centery
+        
+        # Calculate camera's top-left corner to center the target
+        self.camera_x = target_center_x - (self.screen_width_pixels // 2)
+        self.camera_y = target_center_y - (self.screen_height_pixels // 2)
+
+        # Clamp camera position to map boundaries
+        self.camera_x = max(0, min(self.camera_x, self.map_width_pixels - self.screen_width_pixels))
+        self.camera_y = max(0, min(self.camera_y, self.map_height_pixels - self.screen_height_pixels))
+
+    def apply(self, rect):
+        """
+        Adjusts a pygame.Rect's position based on the camera's offset.
+        Useful for drawing sprites/objects.
+        """
+        return rect.move(-self.camera_x, -self.camera_y)
+
+    def apply_pixel_coords(self, x, y):
+        """
+        Adjusts raw pixel coordinates based on the camera's offset.
+        Useful for drawing background tiles or anything drawn by pixel.
+        """
+        return x - self.camera_x, y - self.camera_y
+
+# --- Constants for Map Generation ---
+SUPER_GRID_REGION_SIZE = 4 # Each super-grid cell represents a 4x4 tile area
+
+class BiomeType:
+    LAKE = "lake"
+    FOREST = "forest"
+    PATH = "path" # Represents walkable grass areas
+
+# --- Building Definitions ---
+BUILDINGS_DATA = {
+    "pokecenter": {
+        "width_tiles": 4,  # Building will occupy 4x4 tiles
+        "height_tiles": 4, 
+        "file": "images/house.png" 
+    },
+    "bakery": { 
+        "width_tiles": 4,  # Building will occupy 4x4 tiles
+        "height_tiles": 4, 
+        "file": "images/house2.png" 
+    }
+}
+
+# --- Map Generation Functions ---
+
+def generate_layered_map(rows, cols, seed=None):
+    """
+    Generates a layered map with biomes (lake, forest, path) and a coordinate grid.
+    The map generation uses a "super-grid" for larger biome regions.
+    Ensures at least 65% of the map is non-path (trees/water).
+    """
     if seed is not None:
         np.random.seed(seed)
+        random.seed(seed)
 
-    random_array = np.random.rand(rows, cols)
-    binary_array = (random_array <= probability_of_one).astype(int)
-    return binary_array
+    # Calculate super-grid dimensions
+    super_rows = rows // SUPER_GRID_REGION_SIZE
+    super_cols = cols // SUPER_GRID_REGION_SIZE
 
+    if super_rows == 0 or super_cols == 0:
+        print("Error: Map dimensions too small for super-grid size.")
+        return None, None
+
+    # Initialize super-grid with paths by default
+    super_grid = np.full((super_rows, super_cols), BiomeType.PATH, dtype=object)
+    zone_types = [BiomeType.LAKE, BiomeType.FOREST]
+    
+    # Target: 65% trees/water means 35% or less path
+    max_path_percentage = 0.35 
+
+    attempts = 0
+    max_attempts = 200 # Increased attempts for a better chance of meeting criteria
+
+    while attempts < max_attempts:
+        current_super_grid = np.full((super_rows, super_cols), BiomeType.PATH, dtype=object)
+        
+        # Increase the number of zones to create more non-path areas
+        num_zones_to_create = random.randint(5, 12) 
+        for _ in range(num_zones_to_create):
+            start_r = random.randint(0, super_rows - 1)
+            start_c = random.randint(0, super_cols - 1)
+            zone_type = random.choice(zone_types)
+            
+            # Allow for slightly larger blob sizes for biomes
+            blob_size = random.randint(10, 35) 
+
+            q = [(start_r, start_c)] # Queue for BFS-like blob generation
+            visited = set()
+            count = 0
+
+            while q and count < blob_size:
+                r, c = q.pop(0)
+
+                if (r, c) in visited:
+                    continue
+                visited.add((r, c))
+
+                if 0 <= r < super_rows and 0 <= c < super_cols:
+                    current_super_grid[r, c] = zone_type
+                    count += 1
+
+                    # Add neighbors to the queue with a probability
+                    if random.random() < 0.8:
+                        neighbors = []
+                        if r > 0: neighbors.append((r - 1, c))
+                        if r < super_rows - 1: neighbors.append((r + 1, c))
+                        if c > 0: neighbors.append((r, c - 1))
+                        if c < super_cols - 1: neighbors.append((r, c + 1))
+                        random.shuffle(neighbors) # Randomize neighbor order
+                        q.extend(neighbors)
+            
+        path_cells = np.sum(current_super_grid == BiomeType.PATH)
+        current_path_percentage = path_cells / (super_rows * super_cols)
+
+        # Check if the current path percentage is within the allowed limit
+        if current_path_percentage <= max_path_percentage:
+            super_grid = current_super_grid
+            print(f"Map generated with {current_path_percentage:.2f} path percentage.")
+            break
+        attempts += 1
+    
+    if attempts == max_attempts:
+        print(f"Warning: Could not generate map with desired path percentage (<= {max_path_percentage:.2f}) after {max_attempts} attempts. Using last attempt which has {current_path_percentage:.2f} path percentage.")
+    else:
+        print(f"Map generation successful after {attempts} attempts.")
+
+    # Translate super-grid to tile-level coordinate grid and biome map
+    coordinate_grid = np.zeros((rows, cols), dtype=int) 
+    biome_map = np.empty((rows, cols), dtype=object)
+
+    for super_r in range(super_rows):
+        for super_c in range(super_cols):
+            zone_type = super_grid[super_r, super_c]
+
+            start_tile_r = super_r * SUPER_GRID_REGION_SIZE
+            start_tile_c = super_c * SUPER_GRID_REGION_SIZE
+
+            for r in range(start_tile_r, start_tile_r + SUPER_GRID_REGION_SIZE):
+                for c in range(start_tile_c, start_tile_c + SUPER_GRID_REGION_SIZE):
+                    if zone_type == BiomeType.LAKE:
+                        coordinate_grid[r, c] = 0 # 0 for impassable (water, trees)
+                        biome_map[r, c] = "water"
+                    elif zone_type == BiomeType.FOREST:
+                        coordinate_grid[r, c] = 0 # 0 for impassable
+                        biome_map[r, c] = "forest_tree"
+                    else: # BiomeType.PATH
+                        coordinate_grid[r, c] = 1 # 1 for walkable (grassland)
+                        biome_map[r, c] = "grassland"
+
+    return coordinate_grid, biome_map
+
+def place_buildings_on_map(coordinate_grid, num_buildings=5, building_types=["pokecenter", "bakery"]): 
+    """
+    Places buildings randomly on the map's path tiles.
+    Buildings occupy multiple tiles and are marked as impassable (value 2).
+    """
+    rows, cols = coordinate_grid.shape
+    placed_buildings_objects = []
+
+    # Collect all possible top-left starting points (must be a path tile)
+    possible_top_lefts = []
+    for r in range(rows):
+        for c in range(cols):
+            if coordinate_grid[r, c] == 1:
+                possible_top_lefts.append((r, c))
+    
+    random.shuffle(possible_top_lefts) # Randomize placement order
+
+    for r_start, c_start in possible_top_lefts:
+        if len(placed_buildings_objects) >= num_buildings:
+            break # Stop once desired number of buildings is placed
+
+        building_type_name = random.choice(building_types)
+        building_info = BUILDINGS_DATA[building_type_name]
+        
+        b_width = building_info["width_tiles"]
+        b_height = building_info["height_tiles"]
+
+        # Check if building fits within map boundaries
+        if r_start + b_height > rows or c_start + b_width > cols:
+            continue
+
+        is_clear = True
+        # Check if all tiles under the building are clear and are path tiles
+        for r_offset in range(b_height):
+            for c_offset in range(b_width):
+                current_r = r_start + r_offset
+                current_c = c_start + c_offset
+                
+                # Ensure it's within bounds (redundant due to earlier check, but good for safety)
+                if not (0 <= current_r < rows and 0 <= current_c < cols): 
+                    is_clear = False
+                    break
+                # Building can only be placed on path tiles (coordinate_grid value 1)
+                if coordinate_grid[current_r, current_c] != 1: 
+                    is_clear = False
+                    break
+            if not is_clear:
+                break
+        
+        if is_clear:
+            # Mark the tiles occupied by the building as impassable (2)
+            for r_offset in range(b_height):
+                for c_offset in range(b_width):
+                    coordinate_grid[r_start + r_offset, c_start + c_offset] = 2 
+            
+            placed_buildings_objects.append({
+                "type": building_type_name,
+                "grid_x": c_start,
+                "grid_y": r_start,
+                "width_tiles": b_width,
+                "height_tiles": b_height
+            })
+            
+    return placed_buildings_objects
+
+# --- Player Class ---
+class Player(pygame.sprite.Sprite):
+    def __init__(self, start_grid_x, start_grid_y, square_width, square_height, total_rows, total_cols, player_image):
+        super().__init__()
+        
+        self.image = pygame.transform.scale(player_image, (square_width, square_height))
+        
+        # Player's rectangle, based on grid position translated to pixels
+        self.rect = self.image.get_rect(topleft=(start_grid_x * square_width, start_grid_y * square_height))
+        self.grid_x = start_grid_x
+        self.grid_y = start_grid_y
+
+        self.total_rows = total_rows
+        self.total_cols = total_cols
+        self.square_width = square_width
+        self.square_height = square_height
+        
+        # Movement timing
+        self.move_cooldown_initial = 15 # Delay (in frames) before continuous movement starts
+        self.move_cooldown_subsequent = 5 # Delay (in frames) between continuous steps
+        self.move_timer = 0 # Countdown timer for movement
+        self.moving_direction = None # Stores the (dx, dy) tuple of the currently held direction
+
+    def update(self, coordinate_grid):
+        """
+        Handles the continuous movement of the player if a direction key is held.
+        """
+        if self.move_timer > 0:
+            self.move_timer -= 1
+        
+        # If a direction is held and cooldown is ready, try to move again
+        if self.moving_direction and self.move_timer == 0:
+            # try_move will set the timer for the *next* subsequent move
+            self.try_move(*self.moving_direction, coordinate_grid, is_continuous=True) 
+
+    def set_moving_direction(self, dx, dy):
+        """
+        Sets the direction the player intends to move. 
+        Resets the initial move timer if a new direction is set.
+        """
+        # Only set direction if it's new or if no direction was set previously
+        if self.moving_direction != (dx, dy):
+            self.moving_direction = (dx, dy)
+            self.move_timer = self.move_cooldown_initial # Set initial delay for this new direction
+        # If the same direction key is already held, do nothing here, let update handle continuous movement
+
+    def clear_moving_direction(self):
+        """
+        Clears the moving direction when a key is released, stopping continuous movement.
+        """
+        self.moving_direction = None
+        self.move_timer = 0 # Reset timer completely
+
+    def try_move(self, dx, dy, coordinate_grid, is_continuous=False):
+        """
+        Attempts to move the player by (dx, dy) in grid coordinates.
+        Checks for boundaries and collisions.
+        `is_continuous=True` means this move is part of a sustained key press,
+        so it respects the `move_timer` for pacing.
+        """
+        # For continuous moves, respect the timer. For initial key press, move immediately.
+        if is_continuous and self.move_timer > 0:
+            return False # Indicate that move was not executed due to cooldown
+
+        new_grid_x = self.grid_x + dx
+        new_grid_y = self.grid_y + dy
+
+        # Boundary check: Ensure new position is within map limits
+        if not (0 <= new_grid_x < self.total_cols and 0 <= new_grid_y < self.total_rows):
+            return False
+            
+        # Collision check: Player can only move on path tiles (coordinate_grid value 1)
+        # 0 = impassable (water/tree), 1 = walkable (grass), 2 = impassable (building)
+        if coordinate_grid[new_grid_y, new_grid_x] != 1:
+            return False
+
+        # Move is valid, update player's grid position and pixel rectangle
+        self.grid_x = new_grid_x
+        self.grid_y = new_grid_y
+        self.rect.topleft = (self.grid_x * self.square_width, self.grid_y * self.square_height)
+        
+        # Set timer for the next move (either initial or subsequent cooldown)
+        self.move_timer = self.move_cooldown_subsequent if is_continuous else self.move_cooldown_initial 
+        
+        return True # Indicate successful move
+
+# --- Save/Load Player Coords (Optional: if you want to save game state) ---
 def save_player_coords(grid_x, grid_y, filename="player_coords.json"):
     data = {
         "x": grid_x,
@@ -32,255 +362,227 @@ def load_player_coords(filename="player_coords.json"):
             data = json.load(f)
             return data["x"], data["y"]
     except (FileNotFoundError, KeyError):
-        return 0, 0  
+        return 0, 0 # Return default if file not found or data is missing
 
-
-def generate_biome_map(rows, cols, seed):
-    np.random.seed(seed)
-    biome_grid = np.empty((rows, cols), dtype=object)
-
-    REGION_SIZE = 4  # every 4x4 block is one biome
-    biome_choices = ["grassland", "desert", "snow"]
-
-    for row in range(0, rows, REGION_SIZE):
-        for col in range(0, cols, REGION_SIZE):
-            biome = np.random.choice(biome_choices)
-
-            for r in range(row, min(row + REGION_SIZE, rows)):
-                for c in range(col, min(col + REGION_SIZE, cols)):
-                    biome_grid[r, c] = biome
-
-    return biome_grid
-
-def is_at_building_entrance(player_x, player_y, building_coords):
-    for r, c in building_coords:
-        if player_y == r + 1 and player_x == c:
-            return True
-    return False
-
-
-class Player(pygame.sprite.Sprite):
-    def __init__(self, image_path, start_grid_x, start_grid_y, square_width, square_height, total_rows, total_cols):
-        super().__init__()
-        self.image = pygame.image.load(image_path).convert_alpha()
-        self.image = pygame.transform.scale(self.image, (square_width, square_height))
-
-        self.grid_x = start_grid_x
-        self.grid_y = start_grid_y
-
-        self.rect = self.image.get_rect(topleft=(self.grid_x * square_width, self.grid_y * square_height))
-
-        self.total_rows = total_rows
-        self.total_cols = total_cols
-        self.square_width = square_width
-        self.square_height = square_height
-        self.is_moving = False
-        self.move_cooldown = 1  # frames between moves
-        self.move_timer = 0
-
-
-    def try_move(self, dx, dy, coordinate_grid):
-            if self.move_timer > 0:
-                self.move_timer -= 1
-                return
-
-
-            new_grid_x = self.grid_x + dx
-            new_grid_y = self.grid_y + dy
-
-
-            if not (0 <= new_grid_x < self.total_cols and 0 <= new_grid_y < self.total_rows):
-                return
-
-
-            if coordinate_grid[new_grid_y, new_grid_x] == 0:
-                return
-
-
-            self.grid_x = new_grid_x
-            self.grid_y = new_grid_y
-            self.rect.topleft = (self.grid_x * self.square_width, self.grid_y * self.square_height)
-            self.is_moving = True
-            self.move_timer = self.move_cooldown  # reset cooldown
-    # ADDITION: Load multiple images for animation
-    def load_animation_images(image_paths, width, height):
-        return [pygame.transform.scale(pygame.image.load(path).convert_alpha(), (width, height)) for path in image_paths]
-
-    def update(self):
-        if self.is_moving:
-            self.animation_timer += 1
-            if self.animation_timer >= self.animation_speed:
-                self.animation_timer = 0
-                self.current_frame = (self.current_frame + 1) % len(self.animations[self.direction])
-            self.image = self.animations[self.direction][self.current_frame]
-        else:
-            self.image = self.animations[self.direction][0]
-
-
+# --- Pygame Visualizer Main Function ---
 def run_pygame_visualizer():
+    # Print current working directory for debugging file paths (important for images!)
+    print(f"Current working directory: {os.getcwd()}")
+
     clock = pygame.time.Clock()
-    ARRAY_ROWS = 16
-    ARRAY_COLS = 16
-    PROBABILITY_OF_ONE = 0.85
-    SEED = 3465
+    ARRAY_ROWS = 64
+    ARRAY_COLS = 64
+    SEED = 3465 # Seed for reproducible map generation
 
-    SCREEN_WIDTH = 600
-    SCREEN_HEIGHT = 600
+    TILE_SIZE = 32 # Size of one tile in pixels
+    
+    # --- Screen Size (This is the camera's viewport size, not the whole map size) ---
+    SCREEN_WIDTH = 800  
+    SCREEN_HEIGHT = 600 
+
     CAPTION = f"Pokemon Map (Seed: {SEED})"
-    BLACK = (0, 0, 0)
-
-    coordinate_grid = main_game_array(ARRAY_ROWS, ARRAY_COLS, PROBABILITY_OF_ONE, seed=SEED)
-    if coordinate_grid is None:
-        print("Failed to generate coordinate grid.")
-        return
-
-    # Store all building positions
-    building_coords = [(r, c) for r in range(ARRAY_ROWS) for c in range(ARRAY_COLS) if coordinate_grid[r, c] == 0]
+    BLACK = (0, 0, 0) # Background color
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption(CAPTION)
 
-    square_width = SCREEN_WIDTH // ARRAY_COLS
-    square_height = SCREEN_HEIGHT // ARRAY_ROWS
+    square_width = TILE_SIZE
+    square_height = TILE_SIZE
 
-    # Load and scale biome textures once
+    # --- Generate Map ---
+    coordinate_grid, biome_map = generate_layered_map(ARRAY_ROWS, ARRAY_COLS, seed=SEED)
+    if coordinate_grid is None:
+        print("Failed to generate map. Exiting.")
+        pygame.quit()
+        return
+
+    # --- Load and scale biome textures from individual files ---
+    biome_textures = {}
     try:
-        biome_textures = {
-            "grassland": pygame.transform.scale(pygame.image.load("images/grass.png").convert_alpha(), (square_width, square_height)),
-            "desert": pygame.transform.scale(pygame.image.load("images/32x32_sand_desert_dune.png").convert_alpha(), (square_width, square_height)),
-            "snow": pygame.transform.scale(pygame.image.load("images/snow.png").convert_alpha(), (square_width, square_height)),
-        }
+        biome_textures["grassland"] = pygame.transform.scale(
+            pygame.image.load("images/grass.png").convert_alpha(), (square_width, square_height)
+        )
+        biome_textures["water"] = pygame.transform.scale(
+            pygame.image.load("images/water.png").convert_alpha(), (square_width, square_height)
+        )
+        biome_textures["forest_tree"] = pygame.transform.scale(
+            pygame.image.load("images/tree.png").convert_alpha(), (square_width, square_height)
+        )
+        print("Biome textures loaded successfully.")
     except pygame.error as e:
-        print(f"Error loading biome textures: {e}. Some textures might be missing.")
-        biome_textures = {
-            "grassland": pygame.Surface((square_width, square_height)),
-            "desert": pygame.Surface((square_width, square_height)),
-            "snow": pygame.Surface((square_width, square_height)),
-        }
-        biome_textures["grassland"].fill((34, 139, 34))
-        biome_textures["desert"].fill((210, 180, 140)) 
-        biome_textures["snow"].fill((245, 245, 245))    
+        print(f"Error loading biome textures from individual files: {e}. Using fallback colors.")
+        # Fallback: create solid colored surfaces if images are not found
+        fallback_grass = pygame.Surface((square_width, square_height))
+        fallback_grass.fill((34, 139, 34)) # Forest Green
+        biome_textures["grassland"] = fallback_grass
+
+        fallback_water = pygame.Surface((square_width, square_height))
+        fallback_water.fill((60, 120, 200)) # Blue
+        biome_textures["water"] = fallback_water
+
+        fallback_tree = pygame.Surface((square_width, square_height))
+        fallback_tree.fill((30, 80, 0)) # Dark Green
+        biome_textures["forest_tree"] = fallback_tree
 
 
+    # --- Load Building Sprites from individual files ---
+    building_images = {}
     try:
-        building_image = pygame.image.load("images/pokemon_building.png").convert_alpha()
-        building_scaled = pygame.transform.scale(building_image, (square_width, square_height))
-        tree_image = pygame.image.load("images/tree.png").convert_alpha()
-        tree_scaled = pygame.transform.scale(tree_image, (square_width, square_height))
+        for b_type, b_info in BUILDINGS_DATA.items():
+            building_sprite_original = pygame.image.load(b_info["file"]).convert_alpha()
+            scaled_sprite = pygame.transform.scale(
+                building_sprite_original,
+                (b_info["width_tiles"] * square_width, # Scale based on tiles occupied
+                 b_info["height_tiles"] * square_height)
+            )
+            building_images[b_type] = scaled_sprite
+        print("Building images loaded successfully.")
     except pygame.error as e:
-        print(f"Couldn't load building image: {e}. Using fallback.")
-        building_scaled = pygame.Surface((square_width, square_height))
-        building_scaled.fill((100, 100, 100)) 
-        tree_scaled = pygame.Surface((square_width, square_height))
-        tree_scaled.fill((0, 255, 0))  # Fallback color for trees
+        print(f"Couldn't load building images from individual files: {e}. Using fallback colored rectangles for buildings.")
+        # Fallback for buildings if loading fails
+        for b_type, b_info in BUILDINGS_DATA.items():
+            fallback_surface = pygame.Surface((b_info["width_tiles"] * square_width, b_info["height_tiles"] * square_height))
+            if b_type == "pokecenter":
+                fallback_surface.fill((150, 0, 150)) # Purple
+            elif b_type == "bakery":
+                fallback_surface.fill((100, 100, 100)) # Grey
+            building_images[b_type] = fallback_surface
 
+    placed_buildings_objects = place_buildings_on_map(coordinate_grid, num_buildings=8)
 
-
-    # Generate grid + biome map
-    coordinate_grid = main_game_array(ARRAY_ROWS, ARRAY_COLS, PROBABILITY_OF_ONE, seed=SEED)
-    biome_map = generate_biome_map(ARRAY_ROWS, ARRAY_COLS, seed=SEED)
-
+    # --- Player Setup ---
     players = pygame.sprite.Group()
 
+    # Load the single player sprite image
+    try:
+        player_static_image = pygame.image.load("images/down1.png").convert_alpha()
+        print("Player sprite 'down1.png' loaded successfully.")
+    except pygame.error as e:
+        print(f"Error loading player sprite 'down1.png': {e}. Using a fallback colored square.")
+        player_static_image = pygame.Surface((TILE_SIZE, TILE_SIZE))
+        player_static_image.fill((255, 0, 0)) # Red fallback square
 
-
+    # Find a valid starting position (a '1' in coordinate_grid) for the player
     start_x, start_y = 0, 0
     found_start = False
     for r in range(ARRAY_ROWS):
         for c in range(ARRAY_COLS):
-            if coordinate_grid[r, c] == 1: 
+            if coordinate_grid[r, c] == 1: # '1' means path/grassland
                 start_x, start_y = c, r
                 found_start = True
                 break
         if found_start:
             break
+    
+    if not found_start:
+        print("Could not find a valid starting position for the player (no path tiles available). Exiting.")
+        pygame.quit()
+        return
 
-    player = Player("images/down1.png", start_x, start_y,square_width, square_height, ARRAY_ROWS, ARRAY_COLS) 
+    player = Player(start_x, start_y, square_width, square_height, ARRAY_ROWS, ARRAY_COLS, player_static_image)
     players.add(player)
-        # Setup directional animations
-    image_sets = {
-        "up": ["images/up1.png", "images/up2.png", "images/up3.png", "images/up4.png"],
-        "down": ["images/down1.png", "images/down2.png", "images/down3.png", "images/down4.png"],
-        "left": ["images/left1.png", "images/left2.png", "images/left3.png", "images/left4.png"],
-        "right": ["images/right1.png", "images/right2.png", "images/right3.png", "images/right4.png"]
-    }
 
+    # --- Camera Setup ---
+    camera = Camera(SCREEN_WIDTH, SCREEN_HEIGHT, ARRAY_COLS, ARRAY_ROWS, TILE_SIZE)
 
     # --- Game Loop ---
-    def load_directional_animations(base_names, width, height):
-        animations = {}
-        for direction, image_files in base_names.items():
-            animations[direction] = [pygame.transform.scale(
-                pygame.image.load(img).convert_alpha(), (width, height)) for img in image_files]
-        return animations
-    
-    player.animations = load_directional_animations(image_sets, player.square_width, player.square_height)
-    player.direction = "down"  # starting direction
-    player.current_frame = 0
-    player.animation_timer = 0
-    player.animation_speed = 100
-    player.image = player.animations[player.direction][0]  # Set initial image
-
-
-#abhi finish the implementation of the game loop for the Pygame visualizer in this area below, 
-    # Set the clock for controlling frame rate
-
-    # in the game loop
-    clock.tick(60)  # 60 FPS
-
     running = True
     while running:
         for event in pygame.event.get():
-            keys = pygame.key.get_pressed()
-            player.is_moving = False
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.KEYDOWN: # Check for any key press event
+                if event.key == pygame.K_UP:
+                    player.set_moving_direction(0, -1)
+                elif event.key == pygame.K_DOWN:
+                    player.set_moving_direction(0, 1)
+                elif event.key == pygame.K_LEFT:
+                    player.set_moving_direction(-1, 0)
+                elif event.key == pygame.K_RIGHT:
+                    player.set_moving_direction(1, 0)
                 
-            if keys[pygame.K_UP]:
-                player.direction = "up"
-                above_y = player.grid_y - 1
-                if (above_y, player.grid_x) in building_coords:
-                    print(f"Entered building at ({player.grid_x}, {above_y})")
-                    save_player_coords(player.grid_x, player.grid_y) 
-                    # Handle building entrance logic here
-                else:
-                    player.try_move(0, -1, coordinate_grid)
-            elif keys[pygame.K_DOWN]:
-                player.direction = "down"
-                player.try_move(0, 1, coordinate_grid)
-            elif keys[pygame.K_LEFT]:
-                player.direction = "left"
-                player.try_move(-1, 0, coordinate_grid)
-            elif keys[pygame.K_RIGHT]:
-                player.direction = "right"
-                player.try_move(1, 0, coordinate_grid)
+                # For the initial press, immediately try to move (without cooldown)
+                # Only attempt if a directional key was actually pressed and set moving_direction
+                if player.moving_direction: 
+                    player.try_move(*player.moving_direction, coordinate_grid, is_continuous=False) 
+            elif event.type == pygame.KEYUP: # Check for any key release event
+                # Stop continuous movement when a directional key is released
+                if event.key in [pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT]:
+                    player.clear_moving_direction()
 
+        # Update player position (handles continuous movement if a key is held)
+        players.update(coordinate_grid) 
+        # Update camera to follow the player
+        camera.update(player.rect) 
 
         # Clear the screen
         screen.fill(BLACK)
 
-        # Draw the grid
-        for row_idx in range(ARRAY_ROWS):
-            for col_idx in range(ARRAY_COLS):
-                x = col_idx * square_width
-                y = row_idx * square_height
+        # --- Draw all tiles (optimized with camera culling) ---
+        # Calculate which range of tiles are currently visible on screen
+        start_col = max(0, camera.camera_x // TILE_SIZE)
+        end_col = min(ARRAY_COLS, (camera.camera_x + SCREEN_WIDTH) // TILE_SIZE + 1)
+        start_row = max(0, camera.camera_y // TILE_SIZE)
+        end_row = min(ARRAY_ROWS, (camera.camera_y + SCREEN_HEIGHT) // TILE_SIZE + 1)
+
+        for row_idx in range(start_row, end_row): 
+            for col_idx in range(start_col, end_col):
+                # Calculate the tile's world position (its actual position on the large map)
+                world_x, world_y = col_idx * TILE_SIZE, row_idx * TILE_SIZE 
+                # Apply camera offset to get its position relative to the screen
+                draw_x, draw_y = camera.apply_pixel_coords(world_x, world_y)
+                
+                tile_type = coordinate_grid[row_idx, col_idx]
                 biome = biome_map[row_idx][col_idx]
 
-                if coordinate_grid[row_idx, col_idx] == 1: 
-                    screen.blit(biome_textures[biome], (x, y))
-                else: 
-                    screen.blit(building_scaled, (x, y))
-
-        players.update()
-        players.draw(screen)
-        pygame.display.flip()
-        print(player.grid_x, player.grid_y)
+                # Draw tiles based on their type and biome
+                if tile_type == 1: # Walkable path (grassland)
+                    screen.blit(biome_textures[biome], (draw_x, draw_y))
+                elif tile_type == 0: # Impassable nature (water or forest_tree)
+                    if biome == "water":
+                        screen.blit(biome_textures["water"], (draw_x, draw_y))
+                    elif biome == "forest_tree":
+                        screen.blit(biome_textures["forest_tree"], (draw_x, draw_y))
+                # Note: tile_type == 2 is for buildings, which are drawn separately below.
+                # We don't draw them here to avoid overdrawing if the base tile is also drawn.
         
+        # --- Draw multi-tile buildings (with camera application) ---
+        for building_obj in placed_buildings_objects:
+            # Calculate building's world position
+            world_x, world_y = building_obj["grid_x"] * square_width, building_obj["grid_y"] * square_height
+            # Apply camera offset
+            draw_x, draw_y = camera.apply_pixel_coords(world_x, world_y)
+            
+            building_pixel_width = building_obj["width_tiles"] * square_width
+            building_pixel_height = building_obj["height_tiles"] * square_height
+            
+            # Optimization: Only draw if building is within the visible screen area
+            if (draw_x + building_pixel_width > 0 and draw_x < SCREEN_WIDTH and
+                draw_y + building_pixel_height > 0 and draw_y < SCREEN_HEIGHT):
+                
+                building_sprite = building_images.get(building_obj["type"])
+                if building_sprite:
+                    screen.blit(building_sprite, (draw_x, draw_y))
+                else:
+                    # Fallback if image load failed: draw a magenta rectangle
+                    pygame.draw.rect(screen, (255, 0, 255), (draw_x, draw_y, 
+                                                            building_pixel_width, 
+                                                            building_pixel_height))
 
+        # --- Draw player (with camera application) ---
+        # The player's rect is in "world" coordinates; camera.apply() converts it to screen coordinates
+        screen.blit(player.image, camera.apply(player.rect))
+        
+        # Update the full display surface to show everything drawn
+        pygame.display.flip()
+        # Cap the frame rate
+        clock.tick(60)
+
+    # Quit Pygame when the loop ends
     pygame.quit()
     print("Pygame visualizer closed.")
 
-
+# --- Entry point of the script ---
 if __name__ == "__main__":
     run_pygame_visualizer()
