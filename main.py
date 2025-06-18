@@ -72,7 +72,10 @@ SUPER_GRID_REGION_SIZE = 4 # Each super-grid cell represents a 4x4 tile area
 class BiomeType:
     LAKE = "lake"
     FOREST = "forest"
-    PATH = "path" # Represents walkable grass areas
+    PATH = "path" # Represents walkable grass areas (base layer)
+    TALLGRASS = "tallgrass" # Cosmetic, walkable
+    FLOWERS = "flowers"     # Cosmetic, walkable
+
 
 # --- Building Definitions ---
 BUILDINGS_DATA = {
@@ -95,6 +98,7 @@ def generate_layered_map(rows, cols, seed=None):
     Generates a layered map with biomes (lake, forest, path) and a coordinate grid.
     The map generation uses a "super-grid" for larger biome regions.
     Ensures at least 65% of the map is non-path (trees/water).
+    After main biome generation, randomly places tallgrass and flowers on path tiles.
     """
     if seed is not None:
         np.random.seed(seed)
@@ -113,7 +117,7 @@ def generate_layered_map(rows, cols, seed=None):
     zone_types = [BiomeType.LAKE, BiomeType.FOREST]
     
     # Target: 65% trees/water means 35% or less path
-    max_path_percentage = 0.35 
+    max_path_percentage = 0.35
 
     attempts = 0
     max_attempts = 200 # Increased attempts for a better chance of meeting criteria
@@ -191,8 +195,20 @@ def generate_layered_map(rows, cols, seed=None):
                         coordinate_grid[r, c] = 0 # 0 for impassable
                         biome_map[r, c] = "forest_tree"
                     else: # BiomeType.PATH
-                        coordinate_grid[r, c] = 1 # 1 for walkable (grassland)
+                        coordinate_grid[r, c] = 1 # 1 for walkable (grassland base)
                         biome_map[r, c] = "grassland"
+
+    # --- Add tallgrass and flowers to path tiles ---
+    tallgrass_probability = 0.20 # 20% chance for a path tile to become tallgrass
+    flowers_probability = 0.10   # 10% chance for a path tile to become flowers (after tallgrass check)
+
+    for r in range(rows):
+        for c in range(cols):
+            if coordinate_grid[r, c] == 1: # Only modify walkable path tiles
+                if random.random() < tallgrass_probability:
+                    biome_map[r, c] = "tallgrass"
+                elif random.random() < flowers_probability: # Only if not already tallgrass
+                    biome_map[r, c] = "flowers"
 
     return coordinate_grid, biome_map
 
@@ -239,6 +255,7 @@ def place_buildings_on_map(coordinate_grid, num_buildings=5, building_types=["po
                     is_clear = False
                     break
                 # Building can only be placed on path tiles (coordinate_grid value 1)
+                # It must NOT be on water, trees, or another building (0 or 2)
                 if coordinate_grid[current_r, current_c] != 1: 
                     is_clear = False
                     break
@@ -333,7 +350,7 @@ class Player(pygame.sprite.Sprite):
             return False
             
         # Collision check: Player can only move on path tiles (coordinate_grid value 1)
-        # 0 = impassable (water/tree), 1 = walkable (grass), 2 = impassable (building)
+        # 0 = impassable (water/tree), 1 = walkable (grass/tallgrass/flowers), 2 = impassable (building)
         if coordinate_grid[new_grid_y, new_grid_x] != 1:
             return False
 
@@ -381,8 +398,8 @@ def run_pygame_visualizer():
     SCREEN_HEIGHT = 600 
 
     CAPTION = f"Pokemon Map (Seed: {SEED})"
-    BLACK = (0, 0, 0) # Background color
-    GREEN = {114,199,160}
+    # Removed BLACK and GREEN constants that were not used or incorrectly defined as sets
+    # We will use direct RGB tuples where needed or replace them with loaded textures.
 
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -410,6 +427,13 @@ def run_pygame_visualizer():
         biome_textures["forest_tree"] = pygame.transform.scale(
             pygame.image.load("images/tree.png").convert_alpha(), (square_width, square_height)
         )
+        # NEW: Load tallgrass and flowers
+        biome_textures["tallgrass"] = pygame.transform.scale(
+            pygame.image.load("images/tallgrass.png").convert_alpha(), (square_width, square_height)
+        )
+        biome_textures["flowers"] = pygame.transform.scale(
+            pygame.image.load("images/flowers.png").convert_alpha(), (square_width, square_height)
+        )
         print("Biome textures loaded successfully.")
     except pygame.error as e:
         print(f"Error loading biome textures from individual files: {e}. Using fallback colors.")
@@ -425,6 +449,15 @@ def run_pygame_visualizer():
         fallback_tree = pygame.Surface((square_width, square_height))
         fallback_tree.fill((30, 80, 0)) # Dark Green
         biome_textures["forest_tree"] = fallback_tree
+
+        # Fallback for tallgrass and flowers
+        fallback_tallgrass = pygame.Surface((square_width, square_height))
+        fallback_tallgrass.fill((50, 160, 50)) # Slightly darker green for tallgrass
+        biome_textures["tallgrass"] = fallback_tallgrass
+
+        fallback_flowers = pygame.Surface((square_width, square_height))
+        fallback_flowers.fill((200, 100, 200)) # Pinkish for flowers
+        biome_textures["flowers"] = fallback_flowers
 
 
     # --- Load Building Sprites from individual files ---
@@ -469,7 +502,7 @@ def run_pygame_visualizer():
     found_start = False
     for r in range(ARRAY_ROWS):
         for c in range(ARRAY_COLS):
-            if coordinate_grid[r, c] == 1: # '1' means path/grassland
+            if coordinate_grid[r, c] == 1: # '1' means path/grassland (which includes tallgrass/flowers)
                 start_x, start_y = c, r
                 found_start = True
                 break
@@ -518,8 +551,7 @@ def run_pygame_visualizer():
         camera.update(player.rect) 
 
         # Clear the screen
-        
-        screen.fill((114,199,160))
+        screen.fill((114,199,160)) # Using a direct RGB tuple for screen clear
 
         # --- Draw all tiles (optimized with camera culling) ---
         # Calculate which range of tiles are currently visible on screen
@@ -535,20 +567,14 @@ def run_pygame_visualizer():
                 # Apply camera offset to get its position relative to the screen
                 draw_x, draw_y = camera.apply_pixel_coords(world_x, world_y)
                 
-                tile_type = coordinate_grid[row_idx, col_idx]
-                biome = biome_map[row_idx][col_idx]
+                biome = biome_map[row_idx][col_idx] # This now includes 'tallgrass' and 'flowers'
 
-                # Draw tiles based on their type and biome
-                if tile_type == 1: # Walkable path (grassland)
+                # Draw tiles based on their biome type
+                if biome in biome_textures: # Ensure we have a texture for this biome
                     screen.blit(biome_textures[biome], (draw_x, draw_y))
-                elif tile_type == 0: # Impassable nature (water or forest_tree)
-                    if biome == "water":
-                        screen.blit(biome_textures["water"], (draw_x, draw_y))
-                    elif biome == "forest_tree":
-                        screen.blit(biome_textures["forest_tree"], (draw_x, draw_y))
-                # Note: tile_type == 2 is for buildings, which are drawn separately below.
-                # We don't draw them here to avoid overdrawing if the base tile is also drawn.
-        
+                else: # Fallback for unknown biomes (shouldn't happen with current logic)
+                    pygame.draw.rect(screen, (255, 0, 255), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+
         # --- Draw multi-tile buildings (with camera application) ---
         for building_obj in placed_buildings_objects:
             # Calculate building's world position
