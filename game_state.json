@@ -1,0 +1,10 @@
+{
+    "game_state": "OVERWORLD",
+    "current_map_player_x": 47,
+    "current_map_player_y": 14,
+    "overworld_player_x": 0,
+    "overworld_player_y": 0,
+    "current_building_type": null,
+    "overworld_building_entrance_x": null,
+    "overworld_building_entrance_y": null
+}

@@ -1,0 +1,42 @@
+{
+  "map_settings": {
+    "array_rows": 64,
+    "array_cols": 64,
+    "seed": 6969,
+    "super_grid_region_size": 4,
+    "max_path_percentage": 0.35,
+    "max_map_generation_attempts": 200,
+    "tallgrass_probability": 0.20,
+    "flowers_probability": 0.10
+  },
+  "game_settings": {
+    "tile_size": 32,
+    "screen_width": 800,
+    "screen_height": 600,
+    "caption": "Pokemon Map",
+    "player_move_cooldown_initial": 15,
+    "player_move_cooldown_subsequent": 5,
+    "player_animation_speed": 10,
+    "num_buildings": 8
+  },
+  "building_definitions": {
+    "pokecenter": {
+      "width_tiles": 4,
+      "height_tiles": 4,
+      "file": "images/house.png"
+    },
+    "bakery": {
+      "width_tiles": 4,
+      "height_tiles": 4,
+      "file": "images/house2.png"
+    }
+  },
+  "image_paths": {
+    "grassland": "images/grass.png",
+    "water": "images/water.png",
+    "forest_tree": "images/tree.png",
+    "tallgrass": "images/tallgrass.png",
+    "flowers": "images/flowers.png",
+    "player_base_path": "images/"
+  }
+}
