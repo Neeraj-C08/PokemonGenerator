@@ -4,7 +4,6 @@ import json
 import random
 import os
 
-
 # --- SpriteSheet Class (Not currently used for player or map, but kept if needed for future animated sprites) ---
 class SpriteSheet(object):
     def __init__(self, filename):
@@ -14,12 +13,10 @@ class SpriteSheet(object):
             print(f"Unable to load spritesheet image: {filename}: {e}")
             raise SystemExit(e)
 
-
     def get_image(self, x, y, width, height):
         image = pygame.Surface([width, height], pygame.SRCALPHA).convert_alpha()
         image.blit(self.sheet, (0, 0), (x, y, width, height))
         return image
-
 
     def load_strip(self, rect, image_count):
         x, y, sprite_width, sprite_height = rect
@@ -40,7 +37,6 @@ class Camera:
         self.map_height_pixels = map_height_tiles * tile_size
         self.tile_size = tile_size
 
-
     def update(self, target_rect):
         """
         Updates the camera's position to center on the target rectangle.
@@ -53,11 +49,9 @@ class Camera:
         self.camera_x = target_center_x - (self.screen_width_pixels // 2)
         self.camera_y = target_center_y - (self.screen_height_pixels // 2)
 
-
         # Clamp camera position to map boundaries
         self.camera_x = max(0, min(self.camera_x, self.map_width_pixels - self.screen_width_pixels))
         self.camera_y = max(0, min(self.camera_y, self.map_height_pixels - self.screen_height_pixels))
-
 
     def apply(self, rect):
         """
@@ -65,7 +59,6 @@ class Camera:
         Useful for drawing sprites/objects.
         """
         return rect.move(-self.camera_x, -self.camera_y)
-
 
     def apply_pixel_coords(self, x, y):
         """
@@ -75,9 +68,7 @@ class Camera:
         return x - self.camera_x, y - self.camera_y
 
 
-# --- Constants for Map Generation (These will be loaded from JSON) ---
-# SUPER_GRID_REGION_SIZE will be loaded from config
-# BiomeType class remains as it defines logical types, not configurable values
+# --- Constants for Map Generation ---
 class BiomeType:
     LAKE = "lake"
     FOREST = "forest"
@@ -86,10 +77,9 @@ class BiomeType:
     FLOWERS = "flowers"     # Cosmetic, walkable
 
 
-# BUILDINGS_DATA will be loaded from config
-
-
 # --- Map Generation Functions ---
+
+
 def generate_layered_map(rows, cols, map_settings, seed=None):
     """
     Generates a layered map with biomes (lake, forest, path) and a coordinate grid.
@@ -165,7 +155,7 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
         # Check if the current path percentage is within the allowed limit
         if current_path_percentage <= max_path_percentage:
             super_grid = current_super_grid
-            print(f"Map generated with {current_path_percentage:.2f} path percentage.")
+            # print(f"Map generated with {current_path_percentage:.2f} path percentage.")
             break
         attempts += 1
     
@@ -175,9 +165,9 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
         print(f"Map generation successful after {attempts} attempts.")
 
 
-    # Translate super-grid to tile-level coordinate grid and biome map
+    # Translate super-grid to tile-level coordinate grid and tile map
     coordinate_grid = np.zeros((rows, cols), dtype=int)
-    biome_map = np.empty((rows, cols), dtype=object)
+    tile_map = np.empty((rows, cols), dtype=object)
 
 
     for super_r in range(super_rows):
@@ -193,13 +183,13 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
                 for c in range(start_tile_c, start_tile_c + SUPER_GRID_REGION_SIZE):
                     if zone_type == BiomeType.LAKE:
                         coordinate_grid[r, c] = 0 # 0 for impassable (water, trees)
-                        biome_map[r, c] = "water"
+                        tile_map[r, c] = "water"
                     elif zone_type == BiomeType.FOREST:
                         coordinate_grid[r, c] = 0 # 0 for impassable
-                        biome_map[r, c] = "forest_tree"
+                        tile_map[r, c] = "forest_tree"
                     else: # BiomeType.PATH
                         coordinate_grid[r, c] = 1 # 1 for walkable (grassland base)
-                        biome_map[r, c] = "grassland"
+                        tile_map[r, c] = "grassland"
 
 
     # --- Add tallgrass and flowers to path tiles ---
@@ -207,18 +197,53 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
         for c in range(cols):
             if coordinate_grid[r, c] == 1: # Only modify walkable path tiles
                 if random.random() < tallgrass_probability:
-                    biome_map[r, c] = "tallgrass"
+                    tile_map[r, c] = "tallgrass"
                 elif random.random() < flowers_probability: # Only if not already tallgrass
-                    biome_map[r, c] = "flowers"
+                    tile_map[r, c] = "flowers"
 
 
-    return coordinate_grid, biome_map
+    return coordinate_grid, tile_map
+
+
+def generate_interior_map(rows, cols, interior_settings):
+    """
+    Generates a simple interior map with walls and a floor, and a single door.
+    """
+    coordinate_grid = np.zeros((rows, cols), dtype=int)
+    tile_map = np.empty((rows, cols), dtype=object)
+
+    floor_tile_type = interior_settings["floor_tile_type"]
+    wall_tile_type = interior_settings["wall_tile_type"]
+    door_tile_type = interior_settings["door_tile_type"]
+
+    # Fill with floor tiles by default (walkable)
+    tile_map.fill(floor_tile_type)
+    coordinate_grid.fill(1) # All floor is walkable (initially)
+
+    # Create walls around the perimeter
+    for r in range(rows):
+        for c in range(cols):
+            if r == 0 or r == rows - 1 or c == 0 or c == cols - 1:
+                tile_map[r, c] = wall_tile_type
+                coordinate_grid[r, c] = 0 # Walls are impassable
+
+    # Place a door in the middle of the bottom wall (where player will enter/exit)
+    door_col = cols // 2
+    # Ensure door is on the bottom wall and within bounds
+    if rows - 1 >= 0 and 0 <= door_col < cols:
+        tile_map[rows - 1, door_col] = door_tile_type
+        coordinate_grid[rows - 1, door_col] = 1 # Door is walkable
+
+    print(f"Interior map generated: {rows}x{cols} with floor, walls, and a door at ({rows-1}, {door_col})")
+    # Return the grid, tile types, and the door's grid position (row, col)
+    return coordinate_grid, tile_map, (rows - 1, door_col)
 
 
 def place_buildings_on_map(coordinate_grid, num_buildings, building_definitions):
     """
     Places buildings randomly on the map's path tiles.
     Buildings occupy multiple tiles and are marked as impassable (value 2).
+    Also stores the specific entrance tile for each placed building.
     """
     rows, cols = coordinate_grid.shape
     placed_buildings_objects = []
@@ -243,7 +268,7 @@ def place_buildings_on_map(coordinate_grid, num_buildings, building_definitions)
         
         b_width = building_info["width_tiles"]
         b_height = building_info["height_tiles"]
-
+        
         # Check if building fits within map boundaries
         if r_start + b_height > rows or c_start + b_width > cols:
             continue
@@ -255,30 +280,39 @@ def place_buildings_on_map(coordinate_grid, num_buildings, building_definitions)
                 current_r = r_start + r_offset
                 current_c = c_start + c_offset
                 
-                # Ensure it's within bounds (redundant due to earlier check, but good for safety)
-                if not (0 <= current_r < rows and 0 <= current_c < cols):
-                    is_clear = False
-                    break
                 # Building can only be placed on path tiles (coordinate_grid value 1)
                 # It must NOT be on water, trees, or another building (0 or 2)
-                if coordinate_grid[current_r, current_c] != 1:
+                if not (0 <= current_r < rows and 0 <= current_c < cols and coordinate_grid[current_r, current_c] == 1):
                     is_clear = False
                     break
             if not is_clear:
                 break
         
+        # Calculate the actual interaction tile outside the building.
+        # This is typically below the center of the building's bottom edge.
+        interaction_tile_x = c_start + b_width // 2
+        interaction_tile_y = r_start + b_height # This is the row *below* the building
+
+        # Ensure the interaction tile is within bounds and is a walkable path tile
+        if not (0 <= interaction_tile_y < rows and 0 <= interaction_tile_x < cols and coordinate_grid[interaction_tile_y, interaction_tile_x] == 1):
+            is_clear = False
+
         if is_clear:
             # Mark the tiles occupied by the building as impassable (2)
             for r_offset in range(b_height):
                 for c_offset in range(b_width):
                     coordinate_grid[r_start + r_offset, c_start + c_offset] = 2
             
+            # The interaction tile on the outdoor map (where the player stands to activate entry) should remain walkable (1)
+            coordinate_grid[interaction_tile_y, interaction_tile_x] = 1 
+
             placed_buildings_objects.append({
                 "type": building_type_name,
                 "grid_x": c_start,
                 "grid_y": r_start,
                 "width_tiles": b_width,
-                "height_tiles": b_height
+                "height_tiles": b_height,
+                "entrance_tile_world_coords": (interaction_tile_x, interaction_tile_y) # The player stands on this tile to interact
             })
             
     return placed_buildings_objects
@@ -289,49 +323,43 @@ class Player(pygame.sprite.Sprite):
     def __init__(self, start_grid_x, start_grid_y, square_width, square_height, total_rows, total_cols, player_images, game_settings):
         super().__init__()
 
-        # player_images is a dict with direction keys and lists of images: {"down": [img1, img2], ...}
         self.images = player_images
         self.direction = "down"
         self.current_frame = 0
         self.animation_timer = 0
-        self.animation_speed = game_settings["player_animation_speed"]  # Lower is faster
-
+        self.animation_speed = game_settings["player_animation_speed"]
 
         self.image = self.images[self.direction][self.current_frame]
         self.rect = self.image.get_rect(topleft=(start_grid_x * square_width, start_grid_y * square_height))
 
-
         self.grid_x = start_grid_x
         self.grid_y = start_grid_y
-
 
         self.total_rows = total_rows
         self.total_cols = total_cols
         self.square_width = square_width
         self.square_height = square_height
 
-
         self.move_cooldown_initial = game_settings["player_move_cooldown_initial"]
         self.move_cooldown_subsequent = game_settings["player_move_cooldown_subsequent"]
         self.move_timer = 0
         self.moving_direction = None
 
+        self.interaction_cooldown = 0 # To prevent immediate re-entry/exit
+        self.max_interaction_cooldown = 20 # frames (increased slightly for testing)
 
     def update(self, coordinate_grid):
         if self.move_timer > 0:
             self.move_timer -= 1
-
+        if self.interaction_cooldown > 0:
+            self.interaction_cooldown -= 1
 
         if self.moving_direction:
             moved = False
             if self.move_timer == 0:
-                moved = self.try_move(*self.moving_direction, coordinate_grid, is_continuous=True)
-
-
-            # Update animation regardless of whether player moved (for visual feedback while walking)
+                moved = self.try_move(*self.moving_direction, coordinate_grid, self.total_rows, self.total_cols, is_continuous=True)
             self.update_animation()
         else:
-            # Reset to default idle frame when not moving
             self.animation_timer = 0
             self.current_frame = 0
             self.image = self.images[self.direction][self.current_frame]
@@ -352,7 +380,6 @@ class Player(pygame.sprite.Sprite):
         }
         new_direction = direction_map.get((dx, dy), "down")
 
-
         if self.moving_direction != (dx, dy):
             self.moving_direction = (dx, dy)
             self.direction = new_direction
@@ -364,23 +391,20 @@ class Player(pygame.sprite.Sprite):
         self.move_timer = 0
 
 
-    def try_move(self, dx, dy, coordinate_grid, is_continuous=False):
+    def try_move(self, dx, dy, coordinate_grid, map_rows, map_cols, is_continuous=False):
         if is_continuous and self.move_timer > 0:
             return False
-
 
         new_grid_x = self.grid_x + dx
         new_grid_y = self.grid_y + dy
 
-
-        if not (0 <= new_grid_x < self.total_cols and 0 <= new_grid_y < self.total_rows):
+        # Check map boundaries
+        if not (0 <= new_grid_x < map_cols and 0 <= new_grid_y < map_rows):
             return False
             
-        # Collision check: Player can only move on path tiles (coordinate_grid value 1)
-        # 0 = impassable (water/tree), 1 = walkable (grass/tallgrass/flowers), 2 = impassable (building)
+        # Collision check: Player can only move on walkable tiles (coordinate_grid value 1)
         if coordinate_grid[new_grid_y, new_grid_x] != 1:
             return False
-
 
         self.grid_x = new_grid_x
         self.grid_y = new_grid_y
@@ -389,28 +413,99 @@ class Player(pygame.sprite.Sprite):
         return True
 
 
-# --- Save/Load Player Coords (Optional: if you want to save game state) ---
-def save_player_coords(grid_x, grid_y, filename="player_coords.json"):
-    data = {
-        "x": grid_x,
-        "y": grid_y
+# --- Game State Management Functions ---
+# Global variables
+player = None
+camera = None
+current_map_data = {} # Stores the current map's grid, tile types, and other info
+outdoor_map_data = {} # Stores the outdoor map's state when player is indoors (grid, tiles, buildings, last entrance)
+placed_buildings_data = [] # Stores placed building objects for outdoor map
+
+
+def switch_to_outdoor():
+    global player, camera, current_map_data, outdoor_map_data
+
+    # Restore outdoor map data
+    current_map_data = outdoor_map_data['map_details']
+    global placed_buildings_data # Re-assign global for drawing
+    placed_buildings_data = outdoor_map_data['buildings']
+
+
+    # Reposition player to the entrance tile they last used to enter a building
+    return_coords = outdoor_map_data['player_last_outdoor_pos'] # This is the tile *under* the building entrance
+    player.grid_x = return_coords[0]
+    player.grid_y = return_coords[1]
+    
+    # Update player's internal map dimensions
+    player.total_rows = current_map_data["grid"].shape[0]
+    player.total_cols = current_map_data["grid"].shape[1]
+
+    # Re-initialize camera for the new (larger) map
+    camera = Camera(current_map_data["screen_width"], current_map_data["screen_height"], 
+                    current_map_data["grid"].shape[1], current_map_data["grid"].shape[0], 
+                    current_map_data["tile_size"])
+
+    # Set player rect after updating grid_x/y and before camera update
+    player.rect.topleft = (player.grid_x * current_map_data["tile_size"], player.grid_y * current_map_data["tile_size"])
+    
+    # Set a cooldown to prevent immediate re-entry
+    player.interaction_cooldown = player.max_interaction_cooldown 
+    
+    print(f"Switched to outdoor map. Player at {player.grid_x},{player.grid_y}")
+
+
+def switch_to_indoor(outdoor_entrance_coords, interior_settings, game_settings):
+    global player, camera, current_map_data, outdoor_map_data
+
+    # Store current outdoor map state before switching
+    outdoor_map_data['map_details'] = current_map_data.copy() 
+    outdoor_map_data['player_last_outdoor_pos'] = outdoor_entrance_coords # Store where we entered from
+    outdoor_map_data['buildings'] = placed_buildings_data # Reference to the global list of buildings
+
+    # Generate interior map
+    interior_coord_grid, interior_tile_map, interior_door_pos = generate_interior_map(
+        interior_settings["interior_rows"], interior_settings["interior_cols"], interior_settings
+    )
+
+    # Set current map data to interior map
+    current_map_data = {
+        "grid": interior_coord_grid,
+        "tiles": interior_tile_map,
+        "type": "indoor",
+        "exit_point": interior_door_pos, # Where player exits to outdoor (row, col)
+        "tile_size": game_settings["tile_size"],
+        "screen_width": game_settings["screen_width"],
+        "screen_height": game_settings["screen_height"]
     }
-    with open(filename, "w") as f:
-        json.dump(data, f)
 
+    # Reposition player to the interior door, then move one tile "into" the room
+    # Assuming door is at bottom, player enters from outside (up) and should land inside facing up/down
+    # The door is at (interior_door_pos[1], interior_door_pos[0]) (col, row)
+    player.grid_x = interior_door_pos[1] 
+    player.grid_y = interior_door_pos[0] - 1 # Move player one tile *up* from the door for proper entry
 
-def load_player_coords(filename="player_coords.json"):
-    try:
-        with open(filename, "r") as f:
-            data = json.load(f)
-            return data["x"], data["y"]
-    except (FileNotFoundError, KeyError):
-        return 0, 0 # Return default if file not found or data is missing
+    # Update player's internal map dimensions
+    player.total_rows = current_map_data["grid"].shape[0]
+    player.total_cols = current_map_data["grid"].shape[1]
+
+    # Re-initialize camera for the new (smaller) map
+    camera = Camera(current_map_data["screen_width"], current_map_data["screen_height"], 
+                    current_map_data["grid"].shape[1], current_map_data["grid"].shape[0], 
+                    current_map_data["tile_size"])
+
+    # Set player rect after updating grid_x/y and before camera update
+    player.rect.topleft = (player.grid_x * current_map_data["tile_size"], player.grid_y * current_map_data["tile_size"])
+
+    # Set a cooldown to prevent immediate re-exit
+    player.interaction_cooldown = player.max_interaction_cooldown
+
+    print(f"Switched to indoor map. Player at {player.grid_x},{player.grid_y}")
 
 
 # --- Pygame Visualizer Main Function ---
 def run_pygame_visualizer():
-    # Print current working directory for debugging file paths (important for images!)
+    global player, camera, current_map_data, outdoor_map_data, placed_buildings_data
+
     print(f"Current working directory: {os.getcwd()}")
 
     # --- Load configuration from JSON ---
@@ -427,6 +522,7 @@ def run_pygame_visualizer():
         return
 
     map_settings = config["map_settings"]
+    interior_settings = config["interior_map_settings"]
     game_settings = config["game_settings"]
     building_definitions = config["building_definitions"]
     image_paths = config["image_paths"]
@@ -438,7 +534,6 @@ def run_pygame_visualizer():
 
     TILE_SIZE = game_settings["tile_size"]
     
-    # --- Screen Size (This is the camera's viewport size, not the whole map size) ---
     SCREEN_WIDTH = game_settings["screen_width"]  
     SCREEN_HEIGHT = game_settings["screen_height"]
 
@@ -453,73 +548,62 @@ def run_pygame_visualizer():
     square_height = TILE_SIZE
 
 
-    # --- Generate Map ---
-    # Pass map_settings to the map generation function
-    coordinate_grid, biome_map = generate_layered_map(ARRAY_ROWS, ARRAY_COLS, map_settings, seed=SEED)
-    if coordinate_grid is None:
-        print("Failed to generate map. Exiting.")
-        pygame.quit()
-        return
+    # --- Generate Initial Outdoor Map ---
+    outdoor_coordinate_grid, outdoor_tile_map = generate_layered_map(ARRAY_ROWS, ARRAY_COLS, map_settings, seed=SEED)
+    placed_buildings_data = place_buildings_on_map(outdoor_coordinate_grid, game_settings["num_buildings"], building_definitions)
 
 
-    # --- Load and scale biome textures from individual files ---
-    biome_textures = {}
-    try:
-        for biome_type, path in image_paths.items():
-            if biome_type not in ["player_base_path"]: # Skip player path here
-                biome_textures[biome_type] = pygame.transform.scale(
-                    pygame.image.load(path).convert_alpha(), (square_width, square_height)
+    # --- Load and scale all required textures (outdoor and interior) ---
+    all_tile_textures = {}
+    fallback_colors = {
+        "grassland": (34, 139, 34), 
+        "water": (60, 120, 200),    
+        "forest_tree": (30, 80, 0), 
+        "tallgrass": (50, 160, 50), 
+        "flowers": (200, 100, 200), 
+        "wood_floor": (180, 140, 90), 
+        "stone_wall": (100, 100, 100), 
+        "door": (80, 40, 0) 
+    }
+
+    print("Loading tile textures...")
+    for tile_type, path in image_paths.items():
+        if tile_type not in ["player_base_path"]: 
+            try:
+                texture_original = pygame.image.load(path).convert_alpha()
+                all_tile_textures[tile_type] = pygame.transform.scale(
+                    texture_original, (square_width, square_height)
                 )
-        print("Biome textures loaded successfully.")
-    except pygame.error as e:
-        print(f"Error loading biome textures from individual files: {e}. Using fallback colors.")
-        # Fallback: create solid colored surfaces if images are not found
-        fallback_grass = pygame.Surface((square_width, square_height))
-        fallback_grass.fill((34, 139, 34)) # Forest Green
-        biome_textures["grassland"] = fallback_grass
-
-        fallback_water = pygame.Surface((square_width, square_height))
-        fallback_water.fill((60, 120, 200)) # Blue
-        biome_textures["water"] = fallback_water
-
-        fallback_tree = pygame.Surface((square_width, square_height))
-        fallback_tree.fill((30, 80, 0)) # Dark Green
-        biome_textures["forest_tree"] = fallback_tree
-
-        fallback_tallgrass = pygame.Surface((square_width, square_height))
-        fallback_tallgrass.fill((50, 160, 50)) # Slightly darker green for tallgrass
-        biome_textures["tallgrass"] = fallback_tallgrass
-
-        fallback_flowers = pygame.Surface((square_width, square_height))
-        fallback_flowers.fill((200, 100, 200)) # Pinkish for flowers
-        biome_textures["flowers"] = fallback_flowers
+            except pygame.error as e:
+                print(f"Error loading {path}: {e}. Using fallback color for {tile_type}.")
+                fallback_surface = pygame.Surface((square_width, square_height))
+                fallback_surface.fill(fallback_colors.get(tile_type, (255, 0, 255))) 
+                all_tile_textures[tile_type] = fallback_surface
+    print("All tile textures loaded (or fallbacks created).")
 
 
     # --- Load Building Sprites from individual files ---
     building_images = {}
+    print("Loading building images...")
     try:
         for b_type, b_info in building_definitions.items():
             building_sprite_original = pygame.image.load(b_info["file"]).convert_alpha()
             scaled_sprite = pygame.transform.scale(
                 building_sprite_original,
-                (b_info["width_tiles"] * square_width, # Scale based on tiles occupied
+                (b_info["width_tiles"] * square_width, 
                  b_info["height_tiles"] * square_height)
             )
             building_images[b_type] = scaled_sprite
         print("Building images loaded successfully.")
     except pygame.error as e:
         print(f"Couldn't load building images from individual files: {e}. Using fallback colored rectangles for buildings.")
-        # Fallback for buildings if loading fails
         for b_type, b_info in building_definitions.items():
             fallback_surface = pygame.Surface((b_info["width_tiles"] * square_width, b_info["height_tiles"] * square_height))
             if b_type == "pokecenter":
-                fallback_surface.fill((150, 0, 150)) # Purple
+                fallback_surface.fill((150, 0, 150)) 
             elif b_type == "bakery":
-                fallback_surface.fill((100, 100, 100)) # Grey
+                fallback_surface.fill((100, 100, 100)) 
             building_images[b_type] = fallback_surface
-
-    # Pass num_buildings from game_settings
-    placed_buildings_objects = place_buildings_on_map(coordinate_grid, game_settings["num_buildings"], building_definitions)
 
 
     # --- Player Setup ---
@@ -528,10 +612,10 @@ def run_pygame_visualizer():
     player_images = {}
     directions = ["up", "down", "left", "right"]
     player_base_path = image_paths["player_base_path"]
-
+    print("Loading player images...")
     for direction in directions:
         player_images[direction] = []
-        for frame_num in [1, 2, 3, 4]:
+        for frame_num in [1, 2, 3, 4]: 
             try:
                 img = pygame.image.load(f"{player_base_path}{direction}{frame_num}.png").convert_alpha()
                 img = pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
@@ -539,15 +623,15 @@ def run_pygame_visualizer():
             except pygame.error as e:
                 print(f"Missing image: {player_base_path}{direction}{frame_num}.png — using fallback")
                 fallback = pygame.Surface((TILE_SIZE, TILE_SIZE))
-                fallback.fill((255, 0, 0))  # Bright red placeholder
+                fallback.fill((255, 0, 0))  
                 player_images[direction].append(fallback)
+    print("Player images loaded (or fallbacks created).")
                 
-    # Find a valid starting position (a '1' in coordinate_grid) for the player
     start_x, start_y = 0, 0
     found_start = False
     for r in range(ARRAY_ROWS):
         for c in range(ARRAY_COLS):
-            if coordinate_grid[r, c] == 1: # '1' means path/grassland (which includes tallgrass/flowers)
+            if outdoor_coordinate_grid[r, c] == 1: 
                 start_x, start_y = c, r
                 found_start = True
                 break
@@ -559,10 +643,24 @@ def run_pygame_visualizer():
         pygame.quit()
         return
 
-    # Pass game_settings to Player constructor
     player = Player(start_x, start_y, square_width, square_height, ARRAY_ROWS, ARRAY_COLS, player_images, game_settings)
     players.add(player)
 
+    # --- Initialize Current Map Data to Outdoor ---
+    current_map_data = {
+        "grid": outdoor_coordinate_grid,
+        "tiles": outdoor_tile_map,
+        "type": "outdoor",
+        "tile_size": TILE_SIZE,
+        "screen_width": SCREEN_WIDTH,
+        "screen_height": SCREEN_HEIGHT
+    }
+    # Store outdoor map data for later use when returning from indoors
+    outdoor_map_data = {
+        'map_details': current_map_data.copy(), 
+        'player_last_outdoor_pos': (player.grid_x, player.grid_y), 
+        'buildings': placed_buildings_data 
+    }
 
     # --- Camera Setup ---
     camera = Camera(SCREEN_WIDTH, SCREEN_HEIGHT, ARRAY_COLS, ARRAY_ROWS, TILE_SIZE)
@@ -571,103 +669,109 @@ def run_pygame_visualizer():
     # --- Game Loop ---
     running = True
     while running:
+        # Event handling
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.KEYDOWN: # Check for any key press event
-                if event.key == pygame.K_UP:
-                    player.set_moving_direction(0, -1)
-                elif event.key == pygame.K_DOWN:
-                    player.set_moving_direction(0, 1)
-                elif event.key == pygame.K_LEFT:
-                    player.set_moving_direction(-1, 0)
-                elif event.key == pygame.K_RIGHT:
-                    player.set_moving_direction(1, 0)
+            elif event.type == pygame.KEYDOWN:
+                # IMPORTANT: Set a flag to know if an interaction happened this frame
+                interaction_happened = False
+
+                # Check for interaction key (UP arrow)
+                if event.key == pygame.K_UP and player.interaction_cooldown == 0:
+                    if current_map_data["type"] == "outdoor":
+                        for building_obj in placed_buildings_data:
+                            ent_x, ent_y = building_obj["entrance_tile_world_coords"]
+                            if player.grid_x == ent_x and player.grid_y == ent_y:
+                                print(f"Interacting with {building_obj['type']} at ({ent_x}, {ent_y}) to enter.")
+                                switch_to_indoor((ent_x, ent_y), interior_settings, game_settings)
+                                interaction_happened = True
+                                break # Only enter one building
+                    elif current_map_data["type"] == "indoor":
+                        exit_r, exit_c = current_map_data["exit_point"]
+                        if player.grid_x == exit_c and player.grid_y == exit_r: # Player standing on the door tile
+                             print("Interacting to exit interior.")
+                             switch_to_outdoor()
+                             interaction_happened = True
+                             break # Exit interior
                 
-                # For the initial press, immediately try to move (without cooldown)
-                # Only attempt if a directional key was actually pressed and set moving_direction
-                if player.moving_direction:
-                    player.try_move(*player.moving_direction, coordinate_grid, is_continuous=False)
-            elif event.type == pygame.KEYUP: # Check for any key release event
-                # Stop continuous movement when a directional key is released
+                # Handle general movement keys ONLY if no interaction happened this frame
+                if not interaction_happened:
+                    dx, dy = 0, 0
+                    if event.key == pygame.K_UP:
+                        dy = -1
+                    elif event.key == pygame.K_DOWN:
+                        dy = 1
+                    elif event.key == pygame.K_LEFT:
+                        dx = -1
+                    elif event.key == pygame.K_RIGHT:
+                        dx = 1
+                    
+                    if dx != 0 or dy != 0:
+                        player.set_moving_direction(dx, dy)
+                        # For the initial press, immediately try to move (without cooldown)
+                        player.try_move(dx, dy, current_map_data["grid"], player.total_rows, player.total_cols, is_continuous=False)
+            
+            elif event.type == pygame.KEYUP:
                 if event.key in [pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT]:
                     player.clear_moving_direction()
 
 
-        # Update player position (handles continuous movement if a key is held)
-        players.update(coordinate_grid)
-        # Update camera to follow the player
+        # Update player and camera
+        player.update(current_map_data["grid"])
         camera.update(player.rect)
 
-
         # Clear the screen
-        screen.fill((114,199,160)) # Using a direct RGB tuple for screen clear
+        screen.fill((114,199,160)) 
 
-
-        # --- Draw all tiles (optimized with camera culling) ---
-        # Calculate which range of tiles are currently visible on screen
+        # --- Drawing Logic ---
+        map_rows_to_draw, map_cols_to_draw = current_map_data["grid"].shape
         start_col = max(0, camera.camera_x // TILE_SIZE)
-        end_col = min(ARRAY_COLS, (camera.camera_x + SCREEN_WIDTH) // TILE_SIZE + 1)
+        end_col = min(map_cols_to_draw, (camera.camera_x + SCREEN_WIDTH) // TILE_SIZE + 1)
         start_row = max(0, camera.camera_y // TILE_SIZE)
-        end_row = min(ARRAY_ROWS, (camera.camera_y + SCREEN_HEIGHT) // TILE_SIZE + 1)
-
+        end_row = min(map_rows_to_draw, (camera.camera_y + SCREEN_HEIGHT) // TILE_SIZE + 1)
 
         for row_idx in range(start_row, end_row):
             for col_idx in range(start_col, end_col):
-                # Calculate the tile's world position (its actual position on the large map)
                 world_x, world_y = col_idx * TILE_SIZE, row_idx * TILE_SIZE
-                # Apply camera offset to get its position relative to the screen
                 draw_x, draw_y = camera.apply_pixel_coords(world_x, world_y)
                 
-                biome = biome_map[row_idx][col_idx] # This now includes 'tallgrass' and 'flowers'
+                tile_type = current_map_data["tiles"][row_idx][col_idx]
 
-
-                # Draw tiles based on their biome type
-                if biome in biome_textures: # Ensure we have a texture for this biome
-                    screen.blit(biome_textures[biome], (draw_x, draw_y))
-                else: # Fallback for unknown biomes (shouldn't happen with current logic)
+                if tile_type in all_tile_textures:
+                    screen.blit(all_tile_textures[tile_type], (draw_x, draw_y))
+                else: 
                     pygame.draw.rect(screen, (255, 0, 255), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
 
 
-        # --- Draw multi-tile buildings (with camera application) ---
-        for building_obj in placed_buildings_objects:
-            # Calculate building's world position
-            world_x, world_y = building_obj["grid_x"] * square_width, building_obj["grid_y"] * square_height
-            # Apply camera offset
-            draw_x, draw_y = camera.apply_pixel_coords(world_x, world_y)
-            
-            building_pixel_width = building_obj["width_tiles"] * square_width
-            building_pixel_height = building_obj["height_tiles"] * square_height
-            
-            # Optimization: Only draw if building is within the visible screen area
-            if (draw_x + building_pixel_width > 0 and draw_x < SCREEN_WIDTH and
-                draw_y + building_pixel_height > 0 and draw_y < SCREEN_HEIGHT):
+        if current_map_data["type"] == "outdoor":
+            for building_obj in placed_buildings_data:
+                world_x, world_y = building_obj["grid_x"] * square_width, building_obj["grid_y"] * square_height
+                draw_x, draw_y = camera.apply_pixel_coords(world_x, world_y)
                 
-                building_sprite = building_images.get(building_obj["type"])
-                if building_sprite:
-                    screen.blit(building_sprite, (draw_x, draw_y))
-                else:
-                    # Fallback if image load failed: draw a magenta rectangle
-                    pygame.draw.rect(screen, (255, 0, 255), (draw_x, draw_y,
-                                                            building_pixel_width,
-                                                            building_pixel_height))
+                building_pixel_width = building_obj["width_tiles"] * square_width
+                building_pixel_height = building_obj["height_tiles"] * square_height
+                
+                if (draw_x + building_pixel_width > 0 and draw_x < SCREEN_WIDTH and
+                    draw_y + building_pixel_height > 0 and draw_y < SCREEN_HEIGHT):
+                    
+                    building_sprite = building_images.get(building_obj["type"])
+                    if building_sprite:
+                        screen.blit(building_sprite, (draw_x, draw_y))
+                    else:
+                        pygame.draw.rect(screen, (255, 0, 255), (draw_x, draw_y,
+                                                                building_pixel_width,
+                                                                building_pixel_height))
 
-
-        # --- Draw player (with camera application) ---
-        # The player's rect is in "world" coordinates; camera.apply() converts it to screen coordinates
+        # Draw player
         screen.blit(player.image, camera.apply(player.rect))
         
-        # Update the full display surface to show everything drawn
         pygame.display.flip()
-        # Cap the frame rate
         clock.tick(60)
 
-
-    # Quit Pygame when the loop ends
     pygame.quit()
     print("Pygame visualizer closed.")
 
 
-# --- Entry point of the script ---
 if __name__ == "__main__":
     run_pygame_visualizer()

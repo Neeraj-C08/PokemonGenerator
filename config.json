@@ -9,6 +9,13 @@
     "tallgrass_probability": 0.20,
     "flowers_probability": 0.10
   },
+  "interior_map_settings": {
+    "interior_rows": 20,
+    "interior_cols": 25,
+    "floor_tile_type": "wood_floor",
+    "wall_tile_type": "stone_wall",
+    "door_tile_type": "door"
+  },
   "game_settings": {
     "tile_size": 32,
     "screen_width": 800,
@@ -17,18 +24,20 @@
     "player_move_cooldown_initial": 15,
     "player_move_cooldown_subsequent": 5,
     "player_animation_speed": 10,
-    "num_buildings": 8
+    "num_buildings": 2
   },
   "building_definitions": {
     "pokecenter": {
       "width_tiles": 4,
       "height_tiles": 4,
       "file": "images/house.png"
+     
     },
     "bakery": {
       "width_tiles": 4,
       "height_tiles": 4,
       "file": "images/house2.png"
+    
     }
   },
   "image_paths": {
@@ -37,6 +46,9 @@
     "forest_tree": "images/tree.png",
     "tallgrass": "images/tallgrass.png",
     "flowers": "images/flowers.png",
+    "wood_floor": "images/wood_floor.png",
+    "stone_wall": "images/stone_wall.png",
+    "door": "images/door.png",
     "player_base_path": "images/"
   }
 }
