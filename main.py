@@ -263,13 +263,19 @@ def place_buildings_on_map(coordinate_grid, num_buildings=5, building_types=["po
 
 # --- Player Class ---
 class Player(pygame.sprite.Sprite):
-    def __init__(self, start_grid_x, start_grid_y, square_width, square_height, total_rows, total_cols, player_image):
+    def __init__(self, start_grid_x, start_grid_y, square_width, square_height, total_rows, total_cols, player_images):
         super().__init__()
-        
-        self.image = pygame.transform.scale(player_image, (square_width, square_height))
-        
-        # Player's rectangle, based on grid position translated to pixels
+
+        # player_images is a dict with direction keys and lists of images: {"down": [img1, img2], ...}
+        self.images = player_images
+        self.direction = "down"
+        self.current_frame = 0
+        self.animation_timer = 0
+        self.animation_speed = 10  # Lower is faster
+
+        self.image = self.images[self.direction][self.current_frame]
         self.rect = self.image.get_rect(topleft=(start_grid_x * square_width, start_grid_y * square_height))
+
         self.grid_x = start_grid_x
         self.grid_y = start_grid_y
 
@@ -277,75 +283,70 @@ class Player(pygame.sprite.Sprite):
         self.total_cols = total_cols
         self.square_width = square_width
         self.square_height = square_height
-        
-        # Movement timing
-        self.move_cooldown_initial = 15 # Delay (in frames) before continuous movement starts
-        self.move_cooldown_subsequent = 5 # Delay (in frames) between continuous steps
-        self.move_timer = 0 # Countdown timer for movement
-        self.moving_direction = None # Stores the (dx, dy) tuple of the currently held direction
+
+        self.move_cooldown_initial = 15
+        self.move_cooldown_subsequent = 5
+        self.move_timer = 0
+        self.moving_direction = None
 
     def update(self, coordinate_grid):
-        """
-        Handles the continuous movement of the player if a direction key is held.
-        """
         if self.move_timer > 0:
             self.move_timer -= 1
-        
-        # If a direction is held and cooldown is ready, try to move again
-        if self.moving_direction and self.move_timer == 0:
-            # try_move will set the timer for the *next* subsequent move
-            self.try_move(*self.moving_direction, coordinate_grid, is_continuous=True) 
 
+        if self.moving_direction:
+            moved = False
+            if self.move_timer == 0:
+                moved = self.try_move(*self.moving_direction, coordinate_grid, is_continuous=True)
+
+            # Update animation regardless of whether player moved (for visual feedback while walking)
+            self.update_animation()
+        else:
+            # Reset to default idle frame when not moving
+            self.animation_timer = 0
+            self.current_frame = 0
+            self.image = self.images[self.direction][self.current_frame]
+    def update_animation(self):
+        self.animation_timer += 1
+        if self.animation_timer >= self.animation_speed:
+            self.current_frame = (self.current_frame + 1) % len(self.images[self.direction])
+            self.image = self.images[self.direction][self.current_frame]
+            self.animation_timer = 0
     def set_moving_direction(self, dx, dy):
-        """
-        Sets the direction the player intends to move. 
-        Resets the initial move timer if a new direction is set.
-        """
-        # Only set direction if it's new or if no direction was set previously
+        direction_map = {
+            (0, -1): "up",
+            (0, 1): "down",
+            (-1, 0): "left",
+            (1, 0): "right"
+        }
+        new_direction = direction_map.get((dx, dy), "down")
+
         if self.moving_direction != (dx, dy):
             self.moving_direction = (dx, dy)
-            self.move_timer = self.move_cooldown_initial # Set initial delay for this new direction
-        # If the same direction key is already held, do nothing here, let update handle continuous movement
+            self.direction = new_direction
+            self.move_timer = self.move_cooldown_initial
 
     def clear_moving_direction(self):
-        """
-        Clears the moving direction when a key is released, stopping continuous movement.
-        """
         self.moving_direction = None
-        self.move_timer = 0 # Reset timer completely
+        self.move_timer = 0
 
     def try_move(self, dx, dy, coordinate_grid, is_continuous=False):
-        """
-        Attempts to move the player by (dx, dy) in grid coordinates.
-        Checks for boundaries and collisions.
-        `is_continuous=True` means this move is part of a sustained key press,
-        so it respects the `move_timer` for pacing.
-        """
-        # For continuous moves, respect the timer. For initial key press, move immediately.
         if is_continuous and self.move_timer > 0:
-            return False # Indicate that move was not executed due to cooldown
+            return False
 
         new_grid_x = self.grid_x + dx
         new_grid_y = self.grid_y + dy
 
-        # Boundary check: Ensure new position is within map limits
         if not (0 <= new_grid_x < self.total_cols and 0 <= new_grid_y < self.total_rows):
             return False
-            
-        # Collision check: Player can only move on path tiles (coordinate_grid value 1)
-        # 0 = impassable (water/tree), 1 = walkable (grass), 2 = impassable (building)
+
         if coordinate_grid[new_grid_y, new_grid_x] != 1:
             return False
 
-        # Move is valid, update player's grid position and pixel rectangle
         self.grid_x = new_grid_x
         self.grid_y = new_grid_y
         self.rect.topleft = (self.grid_x * self.square_width, self.grid_y * self.square_height)
-        
-        # Set timer for the next move (either initial or subsequent cooldown)
-        self.move_timer = self.move_cooldown_subsequent if is_continuous else self.move_cooldown_initial 
-        
-        return True # Indicate successful move
+        self.move_timer = self.move_cooldown_subsequent if is_continuous else self.move_cooldown_initial
+        return True
 
 # --- Save/Load Player Coords (Optional: if you want to save game state) ---
 def save_player_coords(grid_x, grid_y, filename="player_coords.json"):
@@ -456,14 +457,21 @@ def run_pygame_visualizer():
     players = pygame.sprite.Group()
 
     # Load the single player sprite image
-    try:
-        player_static_image = pygame.image.load("images/down1.png").convert_alpha()
-        print("Player sprite 'down1.png' loaded successfully.")
-    except pygame.error as e:
-        print(f"Error loading player sprite 'down1.png': {e}. Using a fallback colored square.")
-        player_static_image = pygame.Surface((TILE_SIZE, TILE_SIZE))
-        player_static_image.fill((255, 0, 0)) # Red fallback square
-
+    player_images = {}
+    directions = ["up", "down", "left", "right"]
+    for direction in directions:
+        player_images[direction] = []
+        for frame_num in [1, 2, 3, 4]:  # Assumes 2 frames per direction: up1.png, up2.png, etc.
+            try:
+                img = pygame.image.load(f"images/{direction}{frame_num}.png").convert_alpha()
+                img = pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
+                player_images[direction].append(img)
+            except pygame.error as e:
+                print(f"Missing image: images/{direction}{frame_num}.png — using fallback")
+                fallback = pygame.Surface((TILE_SIZE, TILE_SIZE))
+                fallback.fill((255, 0, 0))  # Bright red placeholder
+                player_images[direction].append(fallback) 
+                
     # Find a valid starting position (a '1' in coordinate_grid) for the player
     start_x, start_y = 0, 0
     found_start = False
@@ -481,7 +489,7 @@ def run_pygame_visualizer():
         pygame.quit()
         return
 
-    player = Player(start_x, start_y, square_width, square_height, ARRAY_ROWS, ARRAY_COLS, player_static_image)
+    player = Player(start_x, start_y, square_width, square_height, ARRAY_ROWS, ARRAY_COLS, player_images)
     players.add(player)
 
     # --- Camera Setup ---
