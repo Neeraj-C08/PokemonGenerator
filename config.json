@@ -2,7 +2,7 @@
   "map_settings": {
     "array_rows": 64,
     "array_cols": 64,
-    "seed": 6969,
+    "seed": 4553,
     "super_grid_region_size": 4,
     "max_path_percentage": 0.35,
     "max_map_generation_attempts": 200,

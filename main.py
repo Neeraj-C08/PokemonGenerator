@@ -4,29 +4,9 @@ import json
 import random
 import os
 
-# --- SpriteSheet Class (Not currently used for player or map, but kept if needed for future animated sprites) ---
-class SpriteSheet(object):
-    def __init__(self, filename):
-        try:
-            self.sheet = pygame.image.load(filename).convert_alpha()
-        except pygame.error as e:
-            print(f"Unable to load spritesheet image: {filename}: {e}")
-            raise SystemExit(e)
-
-    def get_image(self, x, y, width, height):
-        image = pygame.Surface([width, height], pygame.SRCALPHA).convert_alpha()
-        image.blit(self.sheet, (0, 0), (x, y, width, height))
-        return image
-
-    def load_strip(self, rect, image_count):
-        x, y, sprite_width, sprite_height = rect
-        images = []
-        for i in range(image_count):
-            images.append(self.get_image(x + i * sprite_width, y, sprite_width, sprite_height))
-        return images
 
 
-# --- Camera Class ---
+#Camera Class
 class Camera:
     def __init__(self, screen_width_pixels, screen_height_pixels, map_width_tiles, map_height_tiles, tile_size):
         self.camera_x = 0
@@ -54,39 +34,22 @@ class Camera:
         self.camera_y = max(0, min(self.camera_y, self.map_height_pixels - self.screen_height_pixels))
 
     def apply(self, rect):
-        """
-        Adjusts a pygame.Rect's position based on the camera's offset.
-        Useful for drawing sprites/objects.
-        """
         return rect.move(-self.camera_x, -self.camera_y)
 
     def apply_pixel_coords(self, x, y):
-        """
-        Adjusts raw pixel coordinates based on the camera's offset.
-        Useful for drawing background tiles or anything drawn by pixel.
-        """
         return x - self.camera_x, y - self.camera_y
 
 
-# --- Constants for Map Generation ---
 class BiomeType:
     LAKE = "lake"
     FOREST = "forest"
-    PATH = "path" # Represents walkable grass areas (base layer)
-    TALLGRASS = "tallgrass" # Cosmetic, walkable
-    FLOWERS = "flowers"     # Cosmetic, walkable
+    PATH = "path" 
+    TALLGRASS = "tallgrass" 
+    FLOWERS = "flowers"     
 
 
-# --- Map Generation Functions ---
-
-
+#Map Gen
 def generate_layered_map(rows, cols, map_settings, seed=None):
-    """
-    Generates a layered map with biomes (lake, forest, path) and a coordinate grid.
-    The map generation uses a "super-grid" for larger biome regions.
-    Ensures at least a certain percentage of the map is non-path (trees/water).
-    After main biome generation, randomly places tallgrass and flowers on path tiles.
-    """
     if seed is not None:
         np.random.seed(seed)
         random.seed(seed)
@@ -97,7 +60,7 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
     tallgrass_probability = map_settings["tallgrass_probability"]
     flowers_probability = map_settings["flowers_probability"]
 
-    # Calculate super-grid dimensions
+    # Calculate supergrid dimensions
     super_rows = rows // SUPER_GRID_REGION_SIZE
     super_cols = cols // SUPER_GRID_REGION_SIZE
 
@@ -105,7 +68,7 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
         print("Error: Map dimensions too small for super-grid size.")
         return None, None
 
-    # Initialize super-grid with paths by default
+    # Initialize supergrid with paths by default
     super_grid = np.full((super_rows, super_cols), BiomeType.PATH, dtype=object)
     zone_types = [BiomeType.LAKE, BiomeType.FOREST]
     
@@ -114,17 +77,17 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
     while attempts < max_attempts:
         current_super_grid = np.full((super_rows, super_cols), BiomeType.PATH, dtype=object)
         
-        # Increase the number of zones to create more non-path areas
+        # More zones for for nonpath areas
         num_zones_to_create = random.randint(5, 12)
         for _ in range(num_zones_to_create):
             start_r = random.randint(0, super_rows - 1)
             start_c = random.randint(0, super_cols - 1)
             zone_type = random.choice(zone_types)
             
-            # Allow for slightly larger blob sizes for biomes
+           
             blob_size = random.randint(10, 35)
 
-            q = [(start_r, start_c)] # Queue for BFS-like blob generation
+            q = [(start_r, start_c)] 
             visited = set()
             count = 0
 
@@ -139,14 +102,14 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
                     current_super_grid[r, c] = zone_type
                     count += 1
 
-                    # Add neighbors to the queue with a probability
+                    
                     if random.random() < 0.8:
                         neighbors = []
                         if r > 0: neighbors.append((r - 1, c))
                         if r < super_rows - 1: neighbors.append((r + 1, c))
                         if c > 0: neighbors.append((r, c - 1))
                         if c < super_cols - 1: neighbors.append((r, c + 1))
-                        random.shuffle(neighbors) # Randomize neighbor order
+                        random.shuffle(neighbors) 
                         q.extend(neighbors)
             
         path_cells = np.sum(current_super_grid == BiomeType.PATH)
@@ -155,17 +118,16 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
         # Check if the current path percentage is within the allowed limit
         if current_path_percentage <= max_path_percentage:
             super_grid = current_super_grid
-            # print(f"Map generated with {current_path_percentage:.2f} path percentage.")
             break
         attempts += 1
     
     if attempts == max_attempts:
-        print(f"Warning: Could not generate map with desired path percentage (<= {max_path_percentage:.2f}) after {max_attempts} attempts. Using last attempt which has {current_path_percentage:.2f} path percentage.")
+        print(f"Couldn't generate map with the current path percentage")
     else:
         print(f"Map generation successful after {attempts} attempts.")
 
 
-    # Translate super-grid to tile-level coordinate grid and tile map
+    # Translate supergrid to tile level coordinate grid
     coordinate_grid = np.zeros((rows, cols), dtype=int)
     tile_map = np.empty((rows, cols), dtype=object)
 
@@ -182,23 +144,22 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
             for r in range(start_tile_r, start_tile_r + SUPER_GRID_REGION_SIZE):
                 for c in range(start_tile_c, start_tile_c + SUPER_GRID_REGION_SIZE):
                     if zone_type == BiomeType.LAKE:
-                        coordinate_grid[r, c] = 0 # 0 for impassable (water, trees)
+                        coordinate_grid[r, c] = 0 #0 for impassable
                         tile_map[r, c] = "water"
                     elif zone_type == BiomeType.FOREST:
-                        coordinate_grid[r, c] = 0 # 0 for impassable
+                        coordinate_grid[r, c] = 0 #0 for impassable
                         tile_map[r, c] = "forest_tree"
                     else: # BiomeType.PATH
-                        coordinate_grid[r, c] = 1 # 1 for walkable (grassland base)
+                        coordinate_grid[r, c] = 1 #1 for walkable
                         tile_map[r, c] = "grassland"
 
 
-    # --- Add tallgrass and flowers to path tiles ---
     for r in range(rows):
         for c in range(cols):
-            if coordinate_grid[r, c] == 1: # Only modify walkable path tiles
+            if coordinate_grid[r, c] == 1: 
                 if random.random() < tallgrass_probability:
                     tile_map[r, c] = "tallgrass"
-                elif random.random() < flowers_probability: # Only if not already tallgrass
+                elif random.random() < flowers_probability: 
                     tile_map[r, c] = "flowers"
 
 
@@ -206,9 +167,6 @@ def generate_layered_map(rows, cols, map_settings, seed=None):
 
 
 def generate_interior_map(rows, cols, interior_settings):
-    """
-    Generates a simple interior map with walls and a floor, and a single door.
-    """
     coordinate_grid = np.zeros((rows, cols), dtype=int)
     tile_map = np.empty((rows, cols), dtype=object)
 
@@ -216,35 +174,29 @@ def generate_interior_map(rows, cols, interior_settings):
     wall_tile_type = interior_settings["wall_tile_type"]
     door_tile_type = interior_settings["door_tile_type"]
 
-    # Fill with floor tiles by default (walkable)
+
     tile_map.fill(floor_tile_type)
-    coordinate_grid.fill(1) # All floor is walkable (initially)
+    coordinate_grid.fill(1) 
 
     # Create walls around the perimeter
     for r in range(rows):
         for c in range(cols):
             if r == 0 or r == rows - 1 or c == 0 or c == cols - 1:
                 tile_map[r, c] = wall_tile_type
-                coordinate_grid[r, c] = 0 # Walls are impassable
+                coordinate_grid[r, c] = 0 #Walls are impassable
 
-    # Place a door in the middle of the bottom wall (where player will enter/exit)
+    # Place a door in the middle of the bottom wall
     door_col = cols // 2
-    # Ensure door is on the bottom wall and within bounds
+    #door is on the bottom wall and in bounds
     if rows - 1 >= 0 and 0 <= door_col < cols:
         tile_map[rows - 1, door_col] = door_tile_type
-        coordinate_grid[rows - 1, door_col] = 1 # Door is walkable
+        coordinate_grid[rows - 1, door_col] = 1 
 
-    print(f"Interior map generated: {rows}x{cols} with floor, walls, and a door at ({rows-1}, {door_col})")
-    # Return the grid, tile types, and the door's grid position (row, col)
+    print(f"Interior map generated: {rows}x{cols} with door at ({rows-1}, {door_col})")
     return coordinate_grid, tile_map, (rows - 1, door_col)
 
 
 def place_buildings_on_map(coordinate_grid, num_buildings, building_definitions):
-    """
-    Places buildings randomly on the map's path tiles.
-    Buildings occupy multiple tiles and are marked as impassable (value 2).
-    Also stores the specific entrance tile for each placed building.
-    """
     rows, cols = coordinate_grid.shape
     placed_buildings_objects = []
 
@@ -255,13 +207,13 @@ def place_buildings_on_map(coordinate_grid, num_buildings, building_definitions)
             if coordinate_grid[r, c] == 1:
                 possible_top_lefts.append((r, c))
     
-    random.shuffle(possible_top_lefts) # Randomize placement order
+    random.shuffle(possible_top_lefts) 
 
     building_types = list(building_definitions.keys())
 
     for r_start, c_start in possible_top_lefts:
         if len(placed_buildings_objects) >= num_buildings:
-            break # Stop once desired number of buildings is placed
+            break 
 
         building_type_name = random.choice(building_types)
         building_info = building_definitions[building_type_name]
@@ -280,20 +232,18 @@ def place_buildings_on_map(coordinate_grid, num_buildings, building_definitions)
                 current_r = r_start + r_offset
                 current_c = c_start + c_offset
                 
-                # Building can only be placed on path tiles (coordinate_grid value 1)
-                # It must NOT be on water, trees, or another building (0 or 2)
+                # Building can only be placed on path tiles
                 if not (0 <= current_r < rows and 0 <= current_c < cols and coordinate_grid[current_r, current_c] == 1):
                     is_clear = False
                     break
             if not is_clear:
                 break
         
-        # Calculate the actual interaction tile outside the building.
-        # This is typically below the center of the building's bottom edge.
-        interaction_tile_x = c_start + b_width // 2
-        interaction_tile_y = r_start + b_height # This is the row *below* the building
 
-        # Ensure the interaction tile is within bounds and is a walkable path tile
+        interaction_tile_x = c_start + b_width // 2
+        interaction_tile_y = r_start + b_height 
+
+
         if not (0 <= interaction_tile_y < rows and 0 <= interaction_tile_x < cols and coordinate_grid[interaction_tile_y, interaction_tile_x] == 1):
             is_clear = False
 
@@ -303,7 +253,6 @@ def place_buildings_on_map(coordinate_grid, num_buildings, building_definitions)
                 for c_offset in range(b_width):
                     coordinate_grid[r_start + r_offset, c_start + c_offset] = 2
             
-            # The interaction tile on the outdoor map (where the player stands to activate entry) should remain walkable (1)
             coordinate_grid[interaction_tile_y, interaction_tile_x] = 1 
 
             placed_buildings_objects.append({
@@ -312,13 +261,13 @@ def place_buildings_on_map(coordinate_grid, num_buildings, building_definitions)
                 "grid_y": r_start,
                 "width_tiles": b_width,
                 "height_tiles": b_height,
-                "entrance_tile_world_coords": (interaction_tile_x, interaction_tile_y) # The player stands on this tile to interact
+                "entrance_tile_world_coords": (interaction_tile_x, interaction_tile_y) #The player stands on this tile to interact
             })
             
     return placed_buildings_objects
 
 
-# --- Player Class ---
+#Player Class 
 class Player(pygame.sprite.Sprite):
     def __init__(self, start_grid_x, start_grid_y, square_width, square_height, total_rows, total_cols, player_images, game_settings):
         super().__init__()
@@ -345,8 +294,8 @@ class Player(pygame.sprite.Sprite):
         self.move_timer = 0
         self.moving_direction = None
 
-        self.interaction_cooldown = 0 # To prevent immediate re-entry/exit
-        self.max_interaction_cooldown = 20 # frames (increased slightly for testing)
+        self.interaction_cooldown = 0 
+        self.max_interaction_cooldown = 20 
 
     def update(self, coordinate_grid):
         if self.move_timer > 0:
@@ -398,11 +347,11 @@ class Player(pygame.sprite.Sprite):
         new_grid_x = self.grid_x + dx
         new_grid_y = self.grid_y + dy
 
-        # Check map boundaries
+        #Check map bounds
         if not (0 <= new_grid_x < map_cols and 0 <= new_grid_y < map_rows):
             return False
             
-        # Collision check: Player can only move on walkable tiles (coordinate_grid value 1)
+        #Player can only move on walkable tiles
         if coordinate_grid[new_grid_y, new_grid_x] != 1:
             return False
 
@@ -413,8 +362,7 @@ class Player(pygame.sprite.Sprite):
         return True
 
 
-# --- Game State Management Functions ---
-# Global variables
+#Game State 
 player = None
 camera = None
 current_map_data = {} # Stores the current map's grid, tile types, and other info
@@ -427,12 +375,12 @@ def switch_to_outdoor():
 
     # Restore outdoor map data
     current_map_data = outdoor_map_data['map_details']
-    global placed_buildings_data # Re-assign global for drawing
+    global placed_buildings_data 
     placed_buildings_data = outdoor_map_data['buildings']
 
 
-    # Reposition player to the entrance tile they last used to enter a building
-    return_coords = outdoor_map_data['player_last_outdoor_pos'] # This is the tile *under* the building entrance
+    # Put player where they entered the building from
+    return_coords = outdoor_map_data['player_last_outdoor_pos']
     player.grid_x = return_coords[0]
     player.grid_y = return_coords[1]
     
@@ -440,15 +388,14 @@ def switch_to_outdoor():
     player.total_rows = current_map_data["grid"].shape[0]
     player.total_cols = current_map_data["grid"].shape[1]
 
-    # Re-initialize camera for the new (larger) map
     camera = Camera(current_map_data["screen_width"], current_map_data["screen_height"], 
                     current_map_data["grid"].shape[1], current_map_data["grid"].shape[0], 
                     current_map_data["tile_size"])
 
-    # Set player rect after updating grid_x/y and before camera update
+ 
     player.rect.topleft = (player.grid_x * current_map_data["tile_size"], player.grid_y * current_map_data["tile_size"])
     
-    # Set a cooldown to prevent immediate re-entry
+    # cooldown for entry/exit
     player.interaction_cooldown = player.max_interaction_cooldown 
     
     print(f"Switched to outdoor map. Player at {player.grid_x},{player.grid_y}")
@@ -472,43 +419,39 @@ def switch_to_indoor(outdoor_entrance_coords, interior_settings, game_settings):
         "grid": interior_coord_grid,
         "tiles": interior_tile_map,
         "type": "indoor",
-        "exit_point": interior_door_pos, # Where player exits to outdoor (row, col)
+        "exit_point": interior_door_pos,
         "tile_size": game_settings["tile_size"],
         "screen_width": game_settings["screen_width"],
         "screen_height": game_settings["screen_height"]
     }
 
-    # Reposition player to the interior door, then move one tile "into" the room
-    # Assuming door is at bottom, player enters from outside (up) and should land inside facing up/down
-    # The door is at (interior_door_pos[1], interior_door_pos[0]) (col, row)
+   
     player.grid_x = interior_door_pos[1] 
-    player.grid_y = interior_door_pos[0] - 1 # Move player one tile *up* from the door for proper entry
+    player.grid_y = interior_door_pos[0] - 1
 
     # Update player's internal map dimensions
     player.total_rows = current_map_data["grid"].shape[0]
     player.total_cols = current_map_data["grid"].shape[1]
 
-    # Re-initialize camera for the new (smaller) map
     camera = Camera(current_map_data["screen_width"], current_map_data["screen_height"], 
                     current_map_data["grid"].shape[1], current_map_data["grid"].shape[0], 
                     current_map_data["tile_size"])
 
-    # Set player rect after updating grid_x/y and before camera update
+  
     player.rect.topleft = (player.grid_x * current_map_data["tile_size"], player.grid_y * current_map_data["tile_size"])
 
-    # Set a cooldown to prevent immediate re-exit
+  
     player.interaction_cooldown = player.max_interaction_cooldown
 
     print(f"Switched to indoor map. Player at {player.grid_x},{player.grid_y}")
 
 
-# --- Pygame Visualizer Main Function ---
+#Pygame Visualizer Main
 def run_pygame_visualizer():
     global player, camera, current_map_data, outdoor_map_data, placed_buildings_data
 
     print(f"Current working directory: {os.getcwd()}")
 
-    # --- Load configuration from JSON ---
     config_file = "config.json"
     try:
         with open(config_file, "r") as f:
@@ -548,12 +491,12 @@ def run_pygame_visualizer():
     square_height = TILE_SIZE
 
 
-    # --- Generate Initial Outdoor Map ---
+    # Generate outdoor map-
     outdoor_coordinate_grid, outdoor_tile_map = generate_layered_map(ARRAY_ROWS, ARRAY_COLS, map_settings, seed=SEED)
     placed_buildings_data = place_buildings_on_map(outdoor_coordinate_grid, game_settings["num_buildings"], building_definitions)
 
 
-    # --- Load and scale all required textures (outdoor and interior) ---
+    #Load + Scale all textures
     all_tile_textures = {}
     fallback_colors = {
         "grassland": (34, 139, 34), 
@@ -582,7 +525,7 @@ def run_pygame_visualizer():
     print("All tile textures loaded (or fallbacks created).")
 
 
-    # --- Load Building Sprites from individual files ---
+    # Load building sprites
     building_images = {}
     print("Loading building images...")
     try:
@@ -606,7 +549,7 @@ def run_pygame_visualizer():
             building_images[b_type] = fallback_surface
 
 
-    # --- Player Setup ---
+    #Player Setup
     players = pygame.sprite.Group()
 
     player_images = {}
@@ -646,7 +589,6 @@ def run_pygame_visualizer():
     player = Player(start_x, start_y, square_width, square_height, ARRAY_ROWS, ARRAY_COLS, player_images, game_settings)
     players.add(player)
 
-    # --- Initialize Current Map Data to Outdoor ---
     current_map_data = {
         "grid": outdoor_coordinate_grid,
         "tiles": outdoor_tile_map,
@@ -655,29 +597,24 @@ def run_pygame_visualizer():
         "screen_width": SCREEN_WIDTH,
         "screen_height": SCREEN_HEIGHT
     }
-    # Store outdoor map data for later use when returning from indoors
+    # Store outdoor map data for later use when coming from interior 
     outdoor_map_data = {
         'map_details': current_map_data.copy(), 
         'player_last_outdoor_pos': (player.grid_x, player.grid_y), 
         'buildings': placed_buildings_data 
     }
 
-    # --- Camera Setup ---
     camera = Camera(SCREEN_WIDTH, SCREEN_HEIGHT, ARRAY_COLS, ARRAY_ROWS, TILE_SIZE)
 
 
-    # --- Game Loop ---
+    #Main Game Loop
     running = True
     while running:
-        # Event handling
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
-                # IMPORTANT: Set a flag to know if an interaction happened this frame
                 interaction_happened = False
-
-                # Check for interaction key (UP arrow)
                 if event.key == pygame.K_UP and player.interaction_cooldown == 0:
                     if current_map_data["type"] == "outdoor":
                         for building_obj in placed_buildings_data:
@@ -686,16 +623,15 @@ def run_pygame_visualizer():
                                 print(f"Interacting with {building_obj['type']} at ({ent_x}, {ent_y}) to enter.")
                                 switch_to_indoor((ent_x, ent_y), interior_settings, game_settings)
                                 interaction_happened = True
-                                break # Only enter one building
+                                break
                     elif current_map_data["type"] == "indoor":
                         exit_r, exit_c = current_map_data["exit_point"]
-                        if player.grid_x == exit_c and player.grid_y == exit_r: # Player standing on the door tile
+                        if player.grid_x == exit_c and player.grid_y == exit_r: 
                              print("Interacting to exit interior.")
                              switch_to_outdoor()
                              interaction_happened = True
-                             break # Exit interior
-                
-                # Handle general movement keys ONLY if no interaction happened this frame
+                             break
+            
                 if not interaction_happened:
                     dx, dy = 0, 0
                     if event.key == pygame.K_UP:
@@ -709,7 +645,6 @@ def run_pygame_visualizer():
                     
                     if dx != 0 or dy != 0:
                         player.set_moving_direction(dx, dy)
-                        # For the initial press, immediately try to move (without cooldown)
                         player.try_move(dx, dy, current_map_data["grid"], player.total_rows, player.total_cols, is_continuous=False)
             
             elif event.type == pygame.KEYUP:
@@ -717,14 +652,13 @@ def run_pygame_visualizer():
                     player.clear_moving_direction()
 
 
-        # Update player and camera
+
         player.update(current_map_data["grid"])
         camera.update(player.rect)
 
-        # Clear the screen
         screen.fill((114,199,160)) 
 
-        # --- Drawing Logic ---
+        #Drawing Logic
         map_rows_to_draw, map_cols_to_draw = current_map_data["grid"].shape
         start_col = max(0, camera.camera_x // TILE_SIZE)
         end_col = min(map_cols_to_draw, (camera.camera_x + SCREEN_WIDTH) // TILE_SIZE + 1)
@@ -763,7 +697,7 @@ def run_pygame_visualizer():
                                                                 building_pixel_width,
                                                                 building_pixel_height))
 
-        # Draw player
+
         screen.blit(player.image, camera.apply(player.rect))
         
         pygame.display.flip()
